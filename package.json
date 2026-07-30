@@ -1,0 +1,25 @@
+{
+  "name": "paylink",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PayLink — AI-powered payment platform for micro-entrepreneurs. Monorepo workspace root.",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "build:backend": "npm run build --workspace=backend",
+    "build:frontend": "npm run build --workspace=frontend",
+    "lint:backend": "npm run lint --workspace=backend",
+    "lint:frontend": "npm run lint --workspace=frontend",
+    "test:backend": "npm run test --workspace=backend"
+  },
+  "dependencies": {
+    "@surfboardpayments/surf-mcp": "^1.2.1"
+  },
+  "overrides": {
+    "vite": "^6.4.3"
+  }
+}

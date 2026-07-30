@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "surfboard-docs": {
+      "command": "npx",
+      "args": ["@surfboardpayments/surf-mcp"]
+    }
+  }
+}

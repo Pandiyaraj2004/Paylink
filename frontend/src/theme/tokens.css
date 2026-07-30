@@ -1,0 +1,119 @@
+:root {
+  --color-primary: #2563eb;
+  --color-secondary: #10b981;
+  --color-accent: #60a5fa;
+  --color-bg: #f8fafc;
+  --color-surface: #ffffff;
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+  --color-border: #e2e8f0;
+  --color-danger: #dc2626;
+  --color-warning: #d97706;
+
+  /* Safe solid-fill working colors (Section 17.1 callout) */
+  --color-secondary-fill: #047857;
+  --color-accent-fill: #1d4ed8;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-display: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
+
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --color-primary: #3b82f6;
+  --color-secondary: #34d399;
+  --color-accent: #60a5fa;
+  --color-bg: #0b1120;
+  --color-surface: #111827;
+  --color-text-primary: #f1f5f9;
+  --color-text-secondary: #94a3b8;
+  --color-border: #1e293b;
+  --color-danger: #f87171;
+  --color-warning: #fbbf24;
+
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --color-primary: #3b82f6;
+    --color-secondary: #34d399;
+    --color-accent: #60a5fa;
+    --color-bg: #0b1120;
+    --color-surface: #111827;
+    --color-text-primary: #f1f5f9;
+    --color-text-secondary: #94a3b8;
+    --color-border: #1e293b;
+    --color-danger: #f87171;
+    --color-warning: #fbbf24;
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-bg);
+  color: var(--color-text-primary);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  transition: background-color 350ms ease, color 350ms ease;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Gradient-text treatment for hero/display headings only (Section 17). */
+.gradient-text {
+  background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Ambient aurora background, used only on hero/empty/onboarding surfaces (17.6). */
+@keyframes aurora-drift {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(3%, 4%) scale(1.08);
+  }
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+}
+.aurora-blob {
+  animation: aurora-drift 22s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .aurora-blob {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
