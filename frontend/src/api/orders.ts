@@ -38,11 +38,22 @@ export interface ReceiptMerchant {
   tagline: string | null;
   logoBase64: string | null;
   photoBase64: string | null;
+  phone: string | null;
+  email: string | null;
+  address: {
+    line1?: string;
+    line2?: string;
+    city?: string;
+    state?: string;
+    postalCode?: string;
+    country?: string;
+  } | null;
 }
 
 /** Shared shape returned by both GET /api/orders/:id/receipt and /bill-pdf. */
 export interface OrderReceiptData {
   orderId: string;
+  transactionId: string | null;
   items: OrderItem[];
   totalAmount: number;
   currency: string;
@@ -54,6 +65,7 @@ export interface OrderReceiptData {
   createdAt: string;
   issuedAt: string | null;
   merchant: ReceiptMerchant | null;
+  paymentMethod: string | null;
 }
 
 export interface OrderReceiptResponse extends OrderReceiptData {

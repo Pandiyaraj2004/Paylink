@@ -12,3 +12,13 @@ backend/src/config/*.json
 *firebase-adminsdk*.json
 .vite/
 coverage/
+
+# TypeScript project-reference build output (final production audit: these
+# were previously committed by accident — tsconfig.node.json's `composite:
+# true` requires `tsc -b` to emit vite.config.js/.d.ts alongside
+# vite.config.ts, and both tsconfig*.tsbuildinfo files are pure incremental-
+# build cache; none of these should ever be tracked, `vite build` reads
+# vite.config.ts directly).
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts

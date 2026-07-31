@@ -36,67 +36,81 @@ async function callOpenRouter(system, messages) {
   const apiKey = env.OPENROUTER_API_KEY;
   if (!apiKey) return null;
 
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-      'HTTP-Referer': 'https://paylink.app',
-      'X-Title': 'PayLink',
-    },
-    body: JSON.stringify({
-      model: OPENROUTER_MODEL,
-      max_tokens: MAX_TOKENS,
-      messages: [{ role: 'system', content: system }, ...messages],
-    }),
-  });
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+        'HTTP-Referer': 'https://paylink.app',
+        'X-Title': 'PayLink',
+      },
+      body: JSON.stringify({
+        model: OPENROUTER_MODEL,
+        max_tokens: MAX_TOKENS,
+        messages: [{ role: 'system', content: system }, ...messages],
+      }),
+    });
 
-  if (!response.ok) {
-    throw new Error(`OpenRouter returned ${response.status}`);
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`[AI Service] OpenRouter error returned (status ${response.status}):`, errText);
+      throw new Error(`OpenRouter returned status ${response.status}: ${errText}`);
+    }
+    const data = await response.json();
+    const text = data?.choices?.[0]?.message?.content;
+    if (!text) {
+      throw new Error('OpenRouter returned an empty response.');
+    }
+    return text;
+  } catch (err) {
+    console.error('[AI Service] OpenRouter fetch/parse failed:', err.message);
+    throw err;
   }
-  const data = await response.json();
-  const text = data?.choices?.[0]?.message?.content;
-  if (!text) {
-    throw new Error('OpenRouter returned an empty response.');
-  }
-  return text;
 }
 
 /**
  * Calls Gemini's generateContent REST endpoint directly (no SDK dependency
  * added). Gemini has no 'system' role in `contents` — the system prompt goes
- * in the separate `system_instruction` field — and uses 'model' rather than
+ * in the separate `systemInstruction` field — and uses 'model' rather than
  * 'assistant' for the AI's own turns.
  */
 async function callGemini(system, messages) {
   const apiKey = env.GEMINI_API_KEY;
   if (!apiKey) return null;
 
-  const contents = messages.map((m) => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: m.content }],
-  }));
+  try {
+    const contents = messages.map((m) => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    }));
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      system_instruction: { parts: [{ text: system }] },
-      contents,
-      generationConfig: { maxOutputTokens: MAX_TOKENS },
-    }),
-  });
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents,
+        generationConfig: { maxOutputTokens: MAX_TOKENS },
+      }),
+    });
 
-  if (!response.ok) {
-    throw new Error(`Gemini returned ${response.status}`);
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`[AI Service] Gemini error returned (status ${response.status}):`, errText);
+      throw new Error(`Gemini returned status ${response.status}: ${errText}`);
+    }
+    const data = await response.json();
+    const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join('');
+    if (!text) {
+      throw new Error('Gemini returned an empty response.');
+    }
+    return text;
+  } catch (err) {
+    console.error('[AI Service] Gemini fetch/parse failed:', err.message);
+    throw err;
   }
-  const data = await response.json();
-  const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join('');
-  if (!text) {
-    throw new Error('Gemini returned an empty response.');
-  }
-  return text;
 }
 
 /**
@@ -108,25 +122,32 @@ async function callAnthropicLegacy(system, messages) {
   const apiKey = env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: MAX_TOKENS, system, messages }),
-  });
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: MAX_TOKENS, system, messages }),
+    });
 
-  if (!response.ok) {
-    throw new Error(`Anthropic returned ${response.status}`);
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`[AI Service] Anthropic error returned (status ${response.status}):`, errText);
+      throw new Error(`Anthropic returned status ${response.status}: ${errText}`);
+    }
+    const data = await response.json();
+    const text = data?.content?.find((block) => block.type === 'text')?.text;
+    if (!text) {
+      throw new Error('Anthropic returned an empty response.');
+    }
+    return text;
+  } catch (err) {
+    console.error('[AI Service] Anthropic fetch/parse failed:', err.message);
+    throw err;
   }
-  const data = await response.json();
-  const text = data?.content?.find((block) => block.type === 'text')?.text;
-  if (!text) {
-    throw new Error('Anthropic returned an empty response.');
-  }
-  return text;
 }
 
 /**
@@ -137,16 +158,25 @@ async function callAnthropicLegacy(system, messages) {
  * configured at all — never a silent fake success.
  */
 async function callAiModel(system, messages) {
-  const providers = [callOpenRouter, callGemini, callAnthropicLegacy];
+  const providers = [
+    { name: 'OpenRouter', fn: callOpenRouter },
+    { name: 'Gemini', fn: callGemini },
+    { name: 'Anthropic (Legacy)', fn: callAnthropicLegacy }
+  ];
   let lastError = null;
+  let triedAny = false;
 
   for (const provider of providers) {
     try {
-      // eslint-disable-next-line no-await-in-loop
-      const text = await provider(system, messages);
-      if (text) return text;
+      const text = await provider.fn(system, messages);
+      if (text) {
+        console.log(`[AI Service] Successful completion using ${provider.name}`);
+        return text;
+      }
     } catch (err) {
+      console.warn(`[AI Service] Provider ${provider.name} failed:`, err.message);
       lastError = err;
+      triedAny = true;
     }
   }
 
@@ -172,18 +202,24 @@ const SETUP_CONCIERGE_SYSTEM_PROMPT = `You are PayLink's AI Setup Concierge. You
 free-text description of their business into a structured store profile.
 
 Rules:
-- Only use information the merchant actually provided. Never invent prices,
-  item names, or business details.
-- If a price or currency is ambiguous, ask ONE clarifying question before
-  proceeding — do not guess.
-- Support both fixed-price catalog items and "custom amount" items
-  (e.g., "custom wedding blouse — price varies").
-- Output ONLY a single JSON object, with no surrounding prose, of this exact
-  shape: { "businessName": string, "tagline": string, "items": [{ "name": string,
-  "price": number|null, "currency": string|null, "isCustom": boolean }],
-  "clarifyingQuestion": string|null }.
-- Keep the tagline under 10 words, friendly, and specific to the business
-  described — never generic.`;
+- Only use information the merchant actually provided or that can be easily inferred. Never invent prices or item names.
+- If a price or currency is ambiguous, ask ONE clarifying question before proceeding — do not guess.
+- In addition to catalog items, extract or generate profile fields: description, category, phone, email, whatsapp, address, and googleMapsUrl if they are mentioned or can be logically inferred from context.
+- Support both fixed-price catalog items and "custom amount" items (e.g., "custom wedding blouse — price varies").
+- Output ONLY a single JSON object, with no surrounding prose, of this exact shape: {
+  "businessName": string,
+  "tagline": string,
+  "description": string,
+  "category": string,
+  "phone": string|null,
+  "email": string|null,
+  "whatsapp": string|null,
+  "address": { "line1": string, "city": string, "country": string }|null,
+  "googleMapsUrl": string|null,
+  "items": [{ "name": string, "price": number|null, "currency": string|null, "isCustom": boolean }],
+  "clarifyingQuestion": string|null
+}.
+- Keep the tagline under 10 words, friendly, and specific to the business described — never generic.`;
 
 const EARNINGS_ASSISTANT_SYSTEM_PROMPT_TEMPLATE = (merchantName) => `You are PayLink's AI Earnings Assistant for ${merchantName || 'this merchant'}.
 You will be given: (1) the merchant's question, and (2) a JSON object
@@ -203,10 +239,21 @@ Rules:
   number, not just a description).`;
 
 async function runSetupConcierge({ message, conversationHistory = [] }) {
-  const messages = [
-    ...conversationHistory.map((m) => ({ role: m.role, content: m.content })),
-    { role: 'user', content: message },
-  ];
+  const history = [...conversationHistory];
+  const lastHistoryMsg = history[history.length - 1];
+  
+  // If the last history message is already a user message matching the current message,
+  // we do not need to append it again.
+  const alreadyAppended = 
+    lastHistoryMsg && 
+    lastHistoryMsg.role === 'user' && 
+    lastHistoryMsg.content === message;
+
+  if (!alreadyAppended) {
+    history.push({ role: 'user', content: message });
+  }
+
+  const messages = history.map((m) => ({ role: m.role, content: m.content }));
 
   const text = await callAiModel(SETUP_CONCIERGE_SYSTEM_PROMPT, messages);
   const parsed = extractJson(text);
@@ -236,11 +283,20 @@ async function runEarningsAssistant({ question, retrievedData, merchantName }) {
  * sellers this month" still classifies as best_seller, not generic earnings.
  */
 function classifyQuestion(question) {
-  const q = (question || '').toLowerCase();
+  const q = (question || '').toLowerCase().trim();
   const now = new Date();
   let from;
   let rangeLabel;
   let type = 'earnings';
+
+  // Basic greeting or non-analytical conversational keywords check
+  const GREETING_REGEX = /^(hi|hello|hey|hola|greetings|good\s+morning|good\s+afternoon|good\s+evening|yo|help|support)\b/i;
+  const isGreeting = GREETING_REGEX.test(q);
+  const hasAnalyticsKeywords = /earning|revenue|sale|order|best|sell|customer|payout|refund|chart|trend|performance|stat|report|analytic|make|perform|money|paid|transaction|income/i.test(q);
+
+  if (isGreeting || !hasAnalyticsKeywords) {
+    return { from: null, to: null, rangeLabel: 'general', type: 'general_chat' };
+  }
 
   if (/best[\s-]?sell/.test(q)) {
     from = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -331,16 +387,25 @@ async function getEarningsAnswer({ uid, question }) {
   }
 
   const { from, to, rangeLabel, type } = classifyQuestion(question);
-  const orders = await orderRepository.getOrdersInRange(merchant.id, from, to);
+  
+  let orders = [];
+  if (from && to) {
+    orders = await orderRepository.getOrdersInRange(merchant.id, from, to);
+  }
   const orderCount = orders.length;
 
-  let retrievedData = { rangeLabel, from: from.toISOString(), to: to.toISOString(), orderCount };
+  let retrievedData = {
+    rangeLabel,
+    from: from ? from.toISOString() : null,
+    to: to ? to.toISOString() : null,
+    orderCount,
+  };
 
   if (type === 'best_seller') {
     retrievedData = { ...retrievedData, ...computeBestSeller(orders) };
   } else if (type === 'repeat_customers') {
     retrievedData = { ...retrievedData, ...computeRepeatCustomers(orders) };
-  } else {
+  } else if (type === 'earnings') {
     const refundsByOrderId = await loadRefundsByOrderId(paymentRepository, merchant.id, orders);
     const totalEarnings = orders.reduce((sum, o) => sum + netRevenue(o, refundsByOrderId), 0);
     const paidOrderCount = orders.filter((o) => REVENUE_ORDER_STATUSES.includes(o.status)).length;
@@ -357,7 +422,7 @@ async function getEarningsAnswer({ uid, question }) {
   // paid/best-seller/repeat-customer data still flows through to the AI
   // below with real zeros/nulls — an accurate "nothing yet" is better than
   // a generic fallback when we do have real data to report.)
-  if (orderCount === 0) {
+  if (type !== 'general_chat' && orderCount === 0) {
     return {
       answer: "I don't have enough data to answer that yet — there are no orders recorded for that period.",
       available: false,
@@ -385,4 +450,4 @@ async function getEarningsAnswer({ uid, question }) {
   }
 }
 
-module.exports = { runSetupConcierge, runEarningsAssistant, getEarningsAnswer };
+module.exports = { runSetupConcierge, getEarningsAnswer };

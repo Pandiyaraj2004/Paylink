@@ -6,6 +6,7 @@ import { PublicStoreView, type StoreSelection } from '@/components/PublicStoreVi
 import { PaySecurelyModal } from '@/components/PaySecurelyModal';
 import { ReceiptOverlay } from '@/components/ReceiptOverlay';
 import { usePublicPage } from '@/hooks/useMerchant';
+import { useOrderReceipt } from '@/hooks/useOrders';
 
 /**
  * Public Store (master-doc.md Section 15.1) — the branded page a specific
@@ -46,6 +47,12 @@ export default function PublicStore() {
   const amountParam = searchParams.get('amount');
   const qtyParam = searchParams.get('qty');
   const orderIdParam = searchParams.get('orderId');
+  const { data: orderReceipt } = useOrderReceipt(orderIdParam || undefined);
+  const hasPaid =
+    orderReceipt?.status === 'paid' ||
+    orderReceipt?.status === 'completed' ||
+    orderReceipt?.status === 'refunded' ||
+    orderReceipt?.status === 'partially_refunded';
 
   useEffect(() => {
     if (payParam) setModalOpen(true);
@@ -128,7 +135,7 @@ export default function PublicStore() {
 
   return (
     <div className="min-h-screen bg-bg px-4 py-10 sm:px-6">
-      <PublicStoreView page={page} mode="live" onProceed={handleProceed} />
+      <PublicStoreView page={page} mode="live" onProceed={handleProceed} hasPaid={hasPaid} />
       <PaySecurelyModal
         open={modalOpen}
         onOpenChange={handleModalOpenChange}

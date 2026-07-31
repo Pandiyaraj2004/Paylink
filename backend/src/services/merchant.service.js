@@ -876,11 +876,28 @@ async function getPublicPage(slug) {
     .slice(0, 10)
     .map((o) => ({ stars: o.rating.stars, comment: o.rating.comment || null, createdAt: o.rating.createdAt }));
 
+  // Load store gallery images
+  const galleryImages = await galleryRepository.listGalleryImages(merchant.id);
+  const gallery = (galleryImages || [])
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    .map((img) => ({ id: img.id, imageBase64: img.imageBase64 }));
+
   return {
     merchantId: merchant.id,
     businessName: merchant.businessName,
     tagline: merchant.tagline,
     photoBase64: merchant.photoBase64,
+    coverBannerBase64: merchant.coverBannerBase64 || null,
+    logoBase64: merchant.logoBase64 || null,
+    category: merchant.category || null,
+    phone: merchant.phone || null,
+    email: merchant.email || null,
+    whatsapp: merchant.whatsapp || null,
+    address: merchant.address || null,
+    businessHours: merchant.businessHours || null,
+    googleMapsUrl: merchant.googleMapsUrl || null,
+    description: merchant.description || null,
+    gallery,
     items,
     customAmountAllowed,
     isOpen,
@@ -901,7 +918,6 @@ module.exports = {
   getMerchantReviews,
   getPublicPage,
   isMerchantOpen,
-  SUPPORTED_LANGUAGES,
   getMerchantPayout,
   updateMerchantPayout,
   listGallery,

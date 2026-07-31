@@ -3,12 +3,16 @@ const paymentController = require('../controllers/payment.controller');
 const refundController = require('../controllers/refund.controller');
 const authMiddleware = require('../middleware/auth.middleware');
 const { requireRole } = require('../middleware/role.middleware');
+const { checkoutLimiter } = require('../middleware/rateLimit.middleware');
 
 const router = express.Router();
 
 // POST /api/payments/create — Public, immediately follows order creation;
 // no auth token exists yet for an anonymous checkout customer (Section 22.5).
-router.post('/create', paymentController.createPayment);
+// Rate-limited (final production audit finding, Section 28.3): unauthenticated
+// and calls the paid third-party Surfboard API (with retries) on every
+// request, the highest-cost-exposure public endpoint in the app.
+router.post('/create', checkoutLimiter, paymentController.createPayment);
 
 // POST /api/payments/:id/refund — Authenticated (owner). master-doc.md
 // Section 19.3 names the responsible service file refund.service.js even

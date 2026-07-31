@@ -173,6 +173,12 @@ export default function AiSetupConcierge() {
         category: wizard.category,
         tagline: wizard.tagline || undefined,
         logoBase64: wizard.logoBase64 || undefined,
+        description: wizard.description || undefined,
+        phone: wizard.phone || undefined,
+        email: wizard.email || undefined,
+        whatsapp: wizard.whatsapp || undefined,
+        address: wizard.address || undefined,
+        googleMapsUrl: wizard.googleMapsUrl || undefined,
       });
       await refetch();
       setPublished(true);
@@ -234,6 +240,7 @@ export default function AiSetupConcierge() {
                   currency={wizard.currency}
                   onCatalogChange={(items) => update({ draftCatalog: items })}
                   onTaglineSuggestions={(suggestions) => update({ aiTaglineSuggestions: suggestions })}
+                  onProfileChange={(profile) => update(profile)}
                 />
               )}
               {step === 'logo' && (
@@ -347,11 +354,13 @@ function DescriptionStep({
   currency,
   onCatalogChange,
   onTaglineSuggestions,
+  onProfileChange,
 }: {
   draftCatalog: DraftCatalogItem[];
   currency: string;
   onCatalogChange: (items: DraftCatalogItem[]) => void;
   onTaglineSuggestions: (s: string[]) => void;
+  onProfileChange: (profile: Partial<WizardState>) => void;
 }) {
   const [messages, setMessages] = useState<AiConversationMessage[]>([]);
   const [input, setInput] = useState('');
@@ -386,9 +395,25 @@ function DescriptionStep({
     try {
       const res = await setupConcierge(text, nextHistory);
       setMessages((prev) => [...prev, { role: 'assistant', content: res.reply }]);
+      
+      const newPatch: Partial<WizardState> = {};
       if (res.draftCatalog?.length) {
-        onCatalogChange(res.draftCatalog);
+        newPatch.draftCatalog = res.draftCatalog;
       }
+      if (res.businessName) newPatch.businessName = res.businessName;
+      if (res.tagline) newPatch.tagline = res.tagline;
+      if (res.description) newPatch.description = res.description;
+      if (res.category) newPatch.category = res.category;
+      if (res.phone) newPatch.phone = res.phone;
+      if (res.email) newPatch.email = res.email;
+      if (res.whatsapp) newPatch.whatsapp = res.whatsapp;
+      if (res.address) newPatch.address = res.address;
+      if (res.googleMapsUrl) newPatch.googleMapsUrl = res.googleMapsUrl;
+      
+      if (Object.keys(newPatch).length > 0) {
+        onProfileChange(newPatch);
+      }
+
       if (res.clarifyingQuestion) {
         setClarifyingQuestion(res.clarifyingQuestion);
         armClarifyTimeout();

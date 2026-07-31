@@ -261,6 +261,17 @@ export interface PublicPage {
   businessName: string;
   tagline: string | null;
   photoBase64: string | null;
+  coverBannerBase64: string | null;
+  logoBase64: string | null;
+  category: string | null;
+  phone: string | null;
+  email: string | null;
+  whatsapp: string | null;
+  address: MerchantAddress | null;
+  businessHours: BusinessHours | null;
+  googleMapsUrl: string | null;
+  description: string | null;
+  gallery: { id: string; imageBase64: string }[];
   items: Product[];
   customAmountAllowed: boolean;
   isOpen: boolean;

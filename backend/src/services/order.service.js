@@ -327,10 +327,55 @@ async function loadOrderPublicData(orderId) {
   if (!merchantId) {
     throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found.');
   }
-  const order = await orderRepository.getOrderById(merchantId, orderId);
+  let order = await orderRepository.getOrderById(merchantId, orderId);
   if (!order) {
     throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found.');
   }
+
+  // Active Checkout-Time Reconciliation:
+  // If the local order status is still 'pending' but we have initiated a Surfboard payment,
+  // actively check with Surfboard's API to see if the status is resolved. This avoids
+  // customers being stuck on a "loading" state when webhooks are delayed/unreachable.
+  if (order.status === 'pending' && order.payment?.surfboardOrderId) {
+    // Run reconciliation in the background (fire-and-forget) to avoid blocking the HTTP response.
+    // This allows the frontend to transition immediately to "Confirming payment..." and receive
+    // the resolved status on the very first 1s poll.
+    (async () => {
+      try {
+        const surfboardService = require('./surfboard.service');
+        const paymentService = require('./payment.service');
+        const surfboardOrderId = order.payment.surfboardOrderId;
+        const statusResult = await surfboardService.getOrderStatus({ orderId: surfboardOrderId });
+        
+        const mapOrderStatusToEventType = (orderStatus) => {
+          if (orderStatus === 'PAYMENT_COMPLETED') return 'order.paymentcompleted';
+          if (orderStatus === 'PAYMENT_CANCELLED') return 'order.paymentcancelled';
+          if (orderStatus === 'PAYMENT_FAILED') return 'order.paymentfailed';
+          return null;
+        };
+
+        const eventType = mapOrderStatusToEventType(statusResult.orderStatus);
+
+        if (eventType) {
+          const payment = (statusResult.payments || [])[0] || {};
+          await paymentService.processSurfboardWebhookEvent({
+            eventType,
+            metadata: { eventId: `active_reconcile_${surfboardOrderId}_${eventType}` },
+            data: {
+              orderId: surfboardOrderId,
+              referenceId: orderId,
+              paymentId: payment.paymentId || order.payment?.surfboardPaymentId,
+              paymentStatus: payment.paymentStatus,
+              paymentMethod: payment.paymentMethod,
+            },
+          });
+        }
+      } catch (err) {
+        console.warn(`[active-reconciliation] background run failed for order ${orderId}:`, err.message);
+      }
+    })();
+  }
+
   const merchant = await merchantRepository.getMerchantById(merchantId);
 
   return {
@@ -351,8 +396,13 @@ async function loadOrderPublicData(orderId) {
           tagline: merchant.tagline,
           logoBase64: merchant.logoBase64,
           photoBase64: merchant.photoBase64,
+          phone: merchant.phone || null,
+          email: merchant.email || null,
+          address: merchant.address || null,
         }
       : null,
+    transactionId: order.payment?.surfboardPaymentId || order.payment?.surfboardOrderId || null,
+    paymentMethod: order.payment?.method || null,
   };
 }
 

@@ -23,6 +23,13 @@ async function setupConcierge(req, res, next) {
       clarifyingQuestion: draft.clarifyingQuestion || null,
       businessName: draft.businessName || null,
       tagline: draft.tagline || null,
+      description: draft.description || null,
+      category: draft.category || null,
+      phone: draft.phone || null,
+      email: draft.email || null,
+      whatsapp: draft.whatsapp || null,
+      address: draft.address || null,
+      googleMapsUrl: draft.googleMapsUrl || null,
     });
   } catch (err) {
     if (err instanceof AiUnavailableError) {

@@ -16,6 +16,19 @@ export interface SetupConciergeResponse {
   reply: string;
   draftCatalog: DraftCatalogItem[];
   clarifyingQuestion: string | null;
+  businessName?: string | null;
+  tagline?: string | null;
+  description?: string | null;
+  category?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  whatsapp?: string | null;
+  address?: {
+    line1?: string;
+    city?: string;
+    country?: string;
+  } | null;
+  googleMapsUrl?: string | null;
 }
 
 /**

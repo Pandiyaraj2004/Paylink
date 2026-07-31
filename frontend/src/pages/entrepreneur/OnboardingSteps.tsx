@@ -20,7 +20,7 @@ import { cn } from '@/utils/cn';
  * top-level publish orchestration) stay local to each page.
  */
 
-export const CATEGORIES = [
+const CATEGORIES = [
   'Home bakery',
   'Tailoring / Alterations',
   'Tutoring',
@@ -41,7 +41,7 @@ export const PALETTE = [
   { name: 'Violet', color: '#7C3AED' },
 ];
 
-export const PAYMENT_METHODS = [
+const PAYMENT_METHODS = [
   { id: 'card', label: 'Card' },
   { id: 'swish', label: 'Swish' },
   { id: 'wallet', label: 'Wallet' },
@@ -62,6 +62,16 @@ export interface BaseWizardState {
   paymentMethods: string[];
   themePreference: 'light' | 'dark' | 'system';
   tagline: string;
+  description?: string;
+  phone?: string;
+  email?: string;
+  whatsapp?: string;
+  address?: {
+    line1?: string;
+    city?: string;
+    country?: string;
+  } | null;
+  googleMapsUrl?: string;
 }
 
 export function StepShell({
@@ -448,7 +458,7 @@ export function PreviewStep({ wizard }: { wizard: BaseWizardState }) {
   );
 }
 
-export function SummaryRow({ label, value }: { label: string; value: string }) {
+function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between border-b border-border py-2 last:border-0">
       <span className="text-body-m text-text-secondary">{label}</span>

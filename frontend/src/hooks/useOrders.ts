@@ -30,7 +30,10 @@ export function useOrderReceipt(orderId: string | undefined) {
     queryFn: () => getOrderReceipt(orderId as string),
     enabled: !!orderId,
     retry: false,
-    refetchInterval: (query) => (query.state.data?.status === 'pending' ? 2000 : false),
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      return !data || data.status === 'pending' ? 1000 : false;
+    },
   });
 }
 

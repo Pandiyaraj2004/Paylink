@@ -11,10 +11,10 @@ export function Card({ className, children, variant = 'solid', ...props }: CardP
   return (
     <div
       className={cn(
-        'rounded-lg border border-border p-6 shadow-sm',
+        'rounded-md p-6 transition-all duration-200 border',
         variant === 'glass'
-          ? 'border-border/60 bg-surface/70 backdrop-blur-xl'
-          : 'bg-surface',
+          ? 'glass-panel shadow-premium border-border/40'
+          : 'bg-surface border-border shadow-sm',
         className
       )}
       {...props}

@@ -1,9 +1,19 @@
 const path = require('path');
 
-require('dotenv').config();
-// .env.local holds real, never-committed local secrets (currently: real
-// Surfboard demo credentials) and overrides the blank placeholders in .env.
-require('dotenv').config({ path: path.resolve(__dirname, '../../.env.local'), override: true });
+// Final production audit (env consolidation): this repo previously carried
+// BOTH a `backend/.env` (accumulated stale/duplicate variables from an
+// earlier Surfboard integration attempt, never actually read by any code)
+// and this file, `.env.local` — both gitignored, neither committed. `.env`
+// has been removed as the redundant one; `.env.local` is now the single
+// real local/runtime env file, holding actual secrets (Surfboard demo
+// credentials, admin credentials, AI provider keys). Firebase Admin SDK
+// credentials aren't in either — they resolve via the JSON-file fallback,
+// see config/firebase.js's loadCredential(). `dotenv.config()` below is a
+// graceful no-op if `backend/.env` doesn't exist (e.g. in production, where
+// real secrets come from the platform's own env injection instead), so this
+// call is safe to leave in for that scenario without requiring the file to
+// exist locally.
+require('dotenv').config({ path: path.resolve(__dirname, '../../../.env'), override: true });
 
 /**
  * Splits a comma-separated env var into a trimmed, non-empty, cased array.
@@ -25,6 +35,14 @@ function parseCsvList(raw, casing) {
 const env = {
   PORT: parseInt(process.env.PORT, 10) || 4000,
   NODE_ENV: process.env.NODE_ENV || 'development',
+  // ⚠️ Dev-only default. Before any real deployment, set this to the real
+  // production frontend origin(s) — never leave it as localhost, and never
+  // widen it to '*' (the `cors` package would then reject credentialed
+  // requests anyway, since this is used with `credentials: true`, app.js).
+  // Only a single origin is supported today; if the frontend is ever served
+  // from more than one origin (e.g. a bare domain + `www.`), this needs a
+  // comma-separated list + splitting, same pattern as SURFBOARD_ACTIVE_*
+  // below (parseCsvList), rather than the single string used here.
   CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:5173',
   GOOGLE_APPLICATION_CREDENTIALS: process.env.GOOGLE_APPLICATION_CREDENTIALS || '',
   FIREBASE_SERVICE_ACCOUNT_PATH: process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '',
