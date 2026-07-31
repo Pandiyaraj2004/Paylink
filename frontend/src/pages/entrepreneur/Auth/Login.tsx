@@ -34,22 +34,34 @@ const fieldItem = {
   show: { opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' } },
 };
 
-export default function Login() {
+export default function Login({ heading = 'Log in to PayLink' }: { heading?: string }) {
   const navigate = useNavigate();
-  const { user, role, signIn, signInWithGoogle } = useAuth();
+  const { user, role, signIn, signInWithGoogle, sessionError, retrySession } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(() => !!localStorage.getItem(REMEMBER_KEY));
   const [googleLoading, setGoogleLoading] = useState(false);
 
-  // Once auth + the backend session (with role) resolve, redirect to the
-  // correct route tree (master-doc.md Section 21.4: entrepreneur -> /app/*,
-  // admin/senior_admin -> /admin/*). Handles both email/password and Google
-  // sign-in, and also bounces an already-authenticated user off /login.
+  // Once auth + the backend session (with role) resolve, redirect into
+  // /app/* (master-doc.md Section 21.4). This is Firebase-authenticated
+  // merchants only — Admin is a completely separate auth system (Section
+  // 24.4-24.6, AdminLogin.tsx/useAdminAuth.ts) that never reaches this
+  // component at all. Handles both email/password and Google sign-in, and
+  // also bounces an already-authenticated user off /login.
   useEffect(() => {
     if (user && role) {
       navigate(getRoleHomePath(role), { replace: true });
     }
   }, [user, role, navigate]);
+
+  // Firebase auth can succeed (user is set — the "Welcome!" toast already
+  // fired) while the backend session call that resolves `role` fails, e.g. a
+  // brief network blip. Without this, that looks exactly like a hang: no
+  // error, no navigation. Surface it and offer a one-tap retry instead.
+  useEffect(() => {
+    if (user && sessionError) {
+      toast.error("Signed in, but couldn't finish loading your account. Please try again.");
+    }
+  }, [user, sessionError]);
 
   const {
     register,
@@ -95,8 +107,19 @@ export default function Login() {
 
   return (
     <AuthLayout>
-      <h1 className="font-display text-h2 font-semibold text-text-primary">Log in to PayLink</h1>
+      <h1 className="font-display text-h2 font-semibold text-text-primary">{heading}</h1>
       <p className="mt-1 text-body-m text-text-secondary">Welcome back — enter your details below.</p>
+
+      {user && sessionError && (
+        <div className="mt-4 flex flex-col items-start gap-2 rounded-md border border-danger/40 bg-danger/10 px-4 py-3">
+          <p className="text-body-m text-text-primary">
+            You're signed in, but we couldn't load your account. This is usually temporary.
+          </p>
+          <Button variant="ghost" onClick={() => retrySession()}>
+            Try again
+          </Button>
+        </div>
+      )}
 
       <motion.form
         className="mt-6 flex flex-col gap-4"

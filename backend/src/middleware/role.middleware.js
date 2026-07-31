@@ -1,18 +1,20 @@
 const AppError = require('../utils/AppError');
 
 /**
- * Role-based access guard (master-doc.md Section 20.1/20.3 step 4, 24.3).
- * Checks `req.user.role` — sourced from the verified Firebase ID token's
- * custom claims, which auth.middleware already spreads onto `req.user` —
- * against the route's required role(s).
+ * Role-based access guard (master-doc.md Section 20.1/20.3 step 4). Checks
+ * `req.user.role` — sourced from the verified Firebase ID token, which
+ * auth.middleware already spreads onto `req.user` — against the route's
+ * required role(s).
  *
- * Per Section 24.3, only `admin`/`senior_admin` are ever set as Firebase
- * custom claims; any authenticated user without one of those claims is the
- * implicit default `entrepreneur` role (the only other role capable of
- * signing in at all today — `customer` accounts never authenticate, per
- * Section 15's "fully public, no login required" customer pages). This
- * keeps the check a pure token read, with no extra Firestore lookup on
- * every request.
+ * Firebase-authenticated users only ever carry the `entrepreneur` role
+ * (Section 19.2: `users.role` is `entrepreneur | customer`, and `customer`
+ * accounts never authenticate per Section 15's "fully public, no login
+ * required" customer pages), so every call site today is
+ * `requireRole('entrepreneur')` and the `role` default below only ever
+ * matters as a defensive fallback. Admin is a completely separate auth
+ * system (Section 24.4-24.6: Access Code + Password, its own JWT) gated by
+ * adminAuth.middleware.js instead — this function has no knowledge of admin
+ * at all.
  */
 function requireRole(...allowedRoles) {
   return function roleMiddleware(req, res, next) {

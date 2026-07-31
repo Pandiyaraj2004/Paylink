@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { motion, useReducedMotion } from 'framer-motion';
 import { ImagePlus, Loader2, Pencil, Plus, Sparkles, Trash2, X } from 'lucide-react';
@@ -12,6 +12,7 @@ import { Modal } from '@/components/Modal';
 import { Skeleton } from '@/components/Skeleton';
 import { useAuth } from '@/hooks/useAuth';
 import { useMerchant, usePublicPage } from '@/hooks/useMerchant';
+import { usePaymentOptions } from '@/hooks/usePaymentOptions';
 import {
   createProduct,
   deleteProduct,
@@ -56,15 +57,44 @@ export default function CatalogTab() {
   const { data: page, isLoading, isError, refetch } = usePublicPage(slug);
   const queryClient = useQueryClient();
 
+  // Only offer currencies actually ACCEPTED for this Surfboard merchant
+  // account (backend/src/config/env.js's SURFBOARD_ACTIVE_CURRENCIES —
+  // live-verified: only SEK is accepted today) for NEW selections in the
+  // Add/Edit Item currency select — see currencyOptions below, which still
+  // renders an existing item's already-saved currency correctly even if
+  // it's now outside this list (dev Firestore may hold pre-restriction test
+  // data saved as EUR).
+  const { data: paymentOptions } = usePaymentOptions();
+  const availableCurrencies = useMemo(
+    () => CURRENCIES.filter((c) => paymentOptions?.currencies.includes(c)),
+    [paymentOptions]
+  );
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
-  const [form, setForm] = useState<ItemFormState>(EMPTY_FORM('EUR'));
+  const [form, setForm] = useState<ItemFormState>(EMPTY_FORM('SEK'));
   const [compressing, setCompressing] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Product | null>(null);
 
   const items = page?.items ?? [];
-  const defaultCurrency = items[0]?.currency ?? 'EUR';
+  // Prefer the existing catalog's currency (keeps a merchant's items
+  // consistent) — but only if it's still actually active; a product saved
+  // before this restriction existed (e.g. EUR) shouldn't be silently reused
+  // as the default for a brand-new item.
+  const defaultCurrency =
+    items[0]?.currency && availableCurrencies.includes(items[0].currency)
+      ? items[0].currency
+      : (availableCurrencies[0] ?? 'SEK');
+
+  // The select's option list for the Add/Edit modal: the currently active
+  // currencies, plus — only when editing an item whose already-saved
+  // currency falls outside that list — that one extra currency too, so the
+  // select still displays the real saved value instead of silently jumping
+  // to something else (see EMPTY_FORM/openEditModal below).
+  const currencyOptions = availableCurrencies.includes(form.currency)
+    ? availableCurrencies
+    : [form.currency, ...availableCurrencies].filter(Boolean);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['public-page', slug] });
 
@@ -317,9 +347,9 @@ export default function CatalogTab() {
                 onChange={(e) => setForm((p) => ({ ...p, currency: e.target.value }))}
                 className="mt-1.5 w-full rounded-sm border border-border bg-surface px-3 py-2.5 text-body-m text-text-primary focus:outline-none focus:ring-2 focus:ring-accent"
               >
-                {CURRENCIES.map((c) => (
+                {currencyOptions.map((c) => (
                   <option key={c} value={c}>
-                    {c}
+                    {availableCurrencies.includes(c) ? c : `${c} (not currently active)`}
                   </option>
                 ))}
               </select>

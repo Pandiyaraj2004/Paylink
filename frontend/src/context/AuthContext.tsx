@@ -18,6 +18,17 @@ interface AuthContextValue {
   isNewUser: boolean;
   merchantId: string | null;
   role: SessionResponse['role'] | null;
+  /**
+   * Set when POST /api/auth/session fails after a successful Firebase
+   * sign-in — e.g. the backend was briefly unreachable. Firebase auth
+   * succeeded (`user` is set) but `role`/`merchantId` never resolve, so
+   * without this, Login/Register's redirect effect (`if (user && role)`)
+   * just silently never fires — sign-in *looks* successful (the toast
+   * still shows) but nothing ever navigates. Callers should surface this
+   * and offer `retrySession`.
+   */
+  sessionError: boolean;
+  retrySession: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
@@ -33,37 +44,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isNewUser, setIsNewUser] = useState(false);
   const [merchantId, setMerchantId] = useState<string | null>(null);
   const [role, setRole] = useState<SessionResponse['role'] | null>(null);
+  const [sessionError, setSessionError] = useState(false);
 
   // Ensures POST /api/auth/session is only called once per browser session,
   // per Section 22.1 ("Called once, right after a brand-new Firebase account
-  // is created").
+  // is created") — but only once it actually SUCCEEDS. Previously this was
+  // set to `true` before the call even ran, so a failed attempt (e.g. the
+  // backend briefly unreachable) permanently locked out any retry for the
+  // rest of the tab's lifetime: `role`/`merchantId` would never resolve,
+  // Login/Register's `if (user && role)` redirect would never fire, and
+  // sign-in would silently look "stuck" with no error shown anywhere.
   const sessionEstablished = React.useRef(false);
+
+  const establishSession = React.useCallback(async () => {
+    setSessionError(false);
+    try {
+      const session = await createSession();
+      setIsNewUser(session.isNewUser);
+      setMerchantId(session.merchantId);
+      setRole(session.role);
+      sessionEstablished.current = true;
+    } catch (err) {
+      console.error('Failed to establish backend session', err);
+      setSessionError(true);
+      // Deliberately NOT setting sessionEstablished.current here — leaves
+      // the door open for retrySession() (or a fresh sign-in) to try again.
+    }
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       if (firebaseUser && !sessionEstablished.current) {
-        sessionEstablished.current = true;
-        try {
-          const session = await createSession();
-          setIsNewUser(session.isNewUser);
-          setMerchantId(session.merchantId);
-          setRole(session.role);
-        } catch (err) {
-          // Non-fatal: the app can still function; retry on next mount if needed.
-          console.error('Failed to establish backend session', err);
-        }
+        await establishSession();
       }
       if (!firebaseUser) {
         sessionEstablished.current = false;
         setIsNewUser(false);
         setMerchantId(null);
         setRole(null);
+        setSessionError(false);
       }
       setLoading(false);
     });
     return unsubscribe;
-  }, []);
+  }, [establishSession]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -72,6 +97,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isNewUser,
       merchantId,
       role,
+      sessionError,
+      retrySession: establishSession,
       signIn: async (email, password) => {
         await signInWithEmailAndPassword(auth, email, password);
       },
@@ -89,7 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await firebaseSignOut(auth);
       },
     }),
-    [user, loading, isNewUser, merchantId, role]
+    [user, loading, isNewUser, merchantId, role, sessionError, establishSession]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

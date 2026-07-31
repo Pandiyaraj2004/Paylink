@@ -37,15 +37,30 @@ export function Modal({ open, onOpenChange, title, children, className }: ModalP
                 transition={{ duration: reduceMotion ? 0 : 0.18 }}
               />
             </Dialog.Overlay>
-            <Dialog.Content asChild forceMount aria-describedby={undefined}>
+            {/* Static positioning lives on this element only — Framer Motion's
+                `animate` below writes its own inline `transform` (for the
+                entrance y/scale animation), which would otherwise silently
+                clobber Tailwind's `-translate-x-1/2 -translate-y-1/2`
+                centering classes if both were on the same node (the two
+                `transform` sources don't compose, the last one applied
+                wins). Splitting "where it sits" from "how it animates in"
+                across a parent/child avoids that fight. */}
+            <Dialog.Content
+              forceMount
+              aria-describedby={undefined}
+              className={cn(
+                'fixed inset-x-0 bottom-0 z-50 max-h-[90vh]',
+                'sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:max-h-[85vh] sm:w-full sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2'
+              )}
+            >
               <motion.div
                 initial={{ opacity: 0, scale: reduceMotion ? 1 : 0.97, y: reduceMotion ? 0 : 16 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: reduceMotion ? 1 : 0.97, y: reduceMotion ? 0 : 16 }}
                 transition={{ duration: reduceMotion ? 0 : 0.2, ease: 'easeOut' }}
                 className={cn(
-                  'fixed inset-x-0 bottom-0 z-50 max-h-[90vh] overflow-y-auto rounded-t-xl border border-border bg-surface p-6 shadow-lg',
-                  'sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:max-h-[85vh] sm:w-full sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl',
+                  'max-h-[90vh] overflow-y-auto rounded-t-xl border border-border bg-surface p-6 shadow-lg',
+                  'sm:max-h-[85vh] sm:rounded-xl',
                   className
                 )}
               >

@@ -4,6 +4,16 @@ import { motion } from 'framer-motion';
 import {
   LayoutDashboard,
   Package,
+  Receipt,
+  Wallet,
+  Link2,
+  QrCode,
+  Users,
+  BarChart3,
+  Star,
+  Settings as SettingsIcon,
+  User,
+  HelpCircle,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -16,12 +26,23 @@ import { Logo } from './Logo';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/utils/cn';
 
-// Orders/Customers/Settings/Help are future phases (master-doc.md Section
-// 14.4/14.6/14.7/14.8) with no routed page yet — only linking to routes that
-// actually resolve today; add each back as its phase lands.
+// Every entrepreneur page in master-doc.md Section 14's "final vision" nav
+// is routed now — Payment Links/QR Payments (14.6/14.7), Customers (14.9),
+// Analytics (14.10), Reviews (14.11), and Help (14.13) all landed alongside
+// Profile (14.14, split out of the former combined Settings page).
 const NAV_ITEMS = [
   { to: '/app/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/app/products', label: 'Products', icon: Package },
+  { to: '/app/orders', label: 'Orders', icon: Receipt },
+  { to: '/app/payments', label: 'Payments', icon: Wallet },
+  { to: '/app/payment-links', label: 'Payment Links', icon: Link2 },
+  { to: '/app/qr-payments', label: 'QR Payments', icon: QrCode },
+  { to: '/app/customers', label: 'Customers', icon: Users },
+  { to: '/app/analytics', label: 'Analytics', icon: BarChart3 },
+  { to: '/app/reviews', label: 'Reviews', icon: Star },
+  { to: '/app/profile', label: 'Profile', icon: User },
+  { to: '/app/settings', label: 'Settings', icon: SettingsIcon },
+  { to: '/app/help', label: 'Help', icon: HelpCircle },
 ];
 
 /**

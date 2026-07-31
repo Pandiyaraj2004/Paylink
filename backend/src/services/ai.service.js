@@ -1,26 +1,158 @@
-const Anthropic = require('@anthropic-ai/sdk');
 const AiUnavailableError = require('../utils/AiUnavailableError');
 const AppError = require('../utils/AppError');
+const env = require('../config/env');
 const merchantRepository = require('../repositories/merchant.repository');
 const orderRepository = require('../repositories/order.repository');
+const paymentRepository = require('../repositories/payment.repository');
+const { REVENUE_ORDER_STATUSES, netRevenue, loadRefundsByOrderId } = require('../utils/revenue');
 
 /**
- * Wraps the Claude API for PayLink's two AI modules (master-doc.md Section
- * 10, Section 26). Both functions are additive-only: if ANTHROPIC_API_KEY
- * is missing, they throw AiUnavailableError synchronously (no network call)
- * so callers can fall back cleanly (Section 26.7) without ever crashing the
- * server or blocking route registration.
+ * Wraps PayLink's AI provider(s) for its two AI modules (master-doc.md
+ * Section 10, Section 26). Provider order (Phase 9 switch): OpenRouter first,
+ * then Gemini (gemini-2.0-flash) if OpenRouter is unconfigured or its call
+ * fails, then a legacy Anthropic path as a last resort if that's the only
+ * one configured. If NONE are configured/working, throws AiUnavailableError
+ * synchronously or on failure so callers can fall back cleanly (Section
+ * 26.7) without ever crashing the server or blocking route registration —
+ * same graceful-degradation contract as before, just with more providers to
+ * exhaust before giving up.
  */
 
-const MODEL = 'claude-sonnet-4-5';
 const MAX_TOKENS = 1024;
+// Live-verified against this account's actual OpenRouter key: several
+// model slugs (Claude 3.5 Sonnet/Haiku, various Gemini slugs) 404'd with
+// "No endpoints found" — likely account/routing-tier restrictions, not a
+// code issue. `openai/gpt-4o-mini` is confirmed working.
+const OPENROUTER_MODEL = 'openai/gpt-4o-mini';
+const GEMINI_MODEL = 'gemini-2.0-flash';
 
-function getClient() {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return null;
+/**
+ * Calls OpenRouter's OpenAI-compatible chat completions endpoint. `messages`
+ * is `[{role: 'user'|'assistant', content: string}, ...]` — the system
+ * prompt is prepended separately since OpenRouter/OpenAI expect it as a
+ * `system`-role message, not a top-level field.
+ */
+async function callOpenRouter(system, messages) {
+  const apiKey = env.OPENROUTER_API_KEY;
+  if (!apiKey) return null;
+
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+      'HTTP-Referer': 'https://paylink.app',
+      'X-Title': 'PayLink',
+    },
+    body: JSON.stringify({
+      model: OPENROUTER_MODEL,
+      max_tokens: MAX_TOKENS,
+      messages: [{ role: 'system', content: system }, ...messages],
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`OpenRouter returned ${response.status}`);
   }
-  return new Anthropic({ apiKey });
+  const data = await response.json();
+  const text = data?.choices?.[0]?.message?.content;
+  if (!text) {
+    throw new Error('OpenRouter returned an empty response.');
+  }
+  return text;
+}
+
+/**
+ * Calls Gemini's generateContent REST endpoint directly (no SDK dependency
+ * added). Gemini has no 'system' role in `contents` — the system prompt goes
+ * in the separate `system_instruction` field — and uses 'model' rather than
+ * 'assistant' for the AI's own turns.
+ */
+async function callGemini(system, messages) {
+  const apiKey = env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+
+  const contents = messages.map((m) => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }],
+  }));
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: system }] },
+      contents,
+      generationConfig: { maxOutputTokens: MAX_TOKENS },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Gemini returned ${response.status}`);
+  }
+  const data = await response.json();
+  const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join('');
+  if (!text) {
+    throw new Error('Gemini returned an empty response.');
+  }
+  return text;
+}
+
+/**
+ * Legacy path — only reached if neither OpenRouter nor Gemini is configured.
+ * Uses the same raw-fetch approach (no SDK import needed) against
+ * Anthropic's Messages API.
+ */
+async function callAnthropicLegacy(system, messages) {
+  const apiKey = env.ANTHROPIC_API_KEY;
+  if (!apiKey) return null;
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: MAX_TOKENS, system, messages }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Anthropic returned ${response.status}`);
+  }
+  const data = await response.json();
+  const text = data?.content?.find((block) => block.type === 'text')?.text;
+  if (!text) {
+    throw new Error('Anthropic returned an empty response.');
+  }
+  return text;
+}
+
+/**
+ * Tries each configured provider in order, falling through to the next on
+ * either "not configured" (returns null, no network call made) or a thrown
+ * error (network/auth/malformed-response failure). Throws AiUnavailableError
+ * only once every configured provider has been tried and failed, or none are
+ * configured at all — never a silent fake success.
+ */
+async function callAiModel(system, messages) {
+  const providers = [callOpenRouter, callGemini, callAnthropicLegacy];
+  let lastError = null;
+
+  for (const provider of providers) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const text = await provider(system, messages);
+      if (text) return text;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw new AiUnavailableError(
+    lastError ? `AI provider call failed: ${lastError.message}` : 'No AI provider is configured.'
+  );
 }
 
 function extractJson(text) {
@@ -55,40 +187,28 @@ Rules:
 
 const EARNINGS_ASSISTANT_SYSTEM_PROMPT_TEMPLATE = (merchantName) => `You are PayLink's AI Earnings Assistant for ${merchantName || 'this merchant'}.
 You will be given: (1) the merchant's question, and (2) a JSON object
-of relevant transaction data already retrieved for you.
+of relevant data already retrieved for you — its shape depends on the
+question (earnings totals, a top-selling product, or a repeat-customer
+count), and every number in it has already been computed deterministically.
 
 Rules:
-- Only use the numbers provided in the JSON context. Never estimate or
-  fabricate a figure.
-- If the provided data does not answer the question, say so plainly and
-  suggest what date range or detail would help.
+- Only use the numbers provided in the JSON context. Never estimate,
+  calculate, or fabricate a figure — including counts, product names, or
+  amounts not explicitly present in the data.
+- If a field is null or a count is 0, say so plainly (e.g. "no orders yet
+  this period", "no repeat customers yet") rather than guessing.
+- If the provided data does not answer the question at all, say so plainly
+  and suggest what date range or detail would help.
 - Keep answers short, plain-language, and specific (cite the actual
   number, not just a description).`;
 
 async function runSetupConcierge({ message, conversationHistory = [] }) {
-  const client = getClient();
-  if (!client) {
-    throw new AiUnavailableError('AI Setup Concierge is not configured.');
-  }
-
   const messages = [
     ...conversationHistory.map((m) => ({ role: m.role, content: m.content })),
     { role: 'user', content: message },
   ];
 
-  let response;
-  try {
-    response = await client.messages.create({
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
-      system: SETUP_CONCIERGE_SYSTEM_PROMPT,
-      messages,
-    });
-  } catch (err) {
-    throw new AiUnavailableError('AI Setup Concierge is temporarily unavailable.');
-  }
-
-  const text = response?.content?.find((block) => block.type === 'text')?.text;
+  const text = await callAiModel(SETUP_CONCIERGE_SYSTEM_PROMPT, messages);
   const parsed = extractJson(text);
 
   if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.items)) {
@@ -99,45 +219,38 @@ async function runSetupConcierge({ message, conversationHistory = [] }) {
 }
 
 async function runEarningsAssistant({ question, retrievedData, merchantName }) {
-  const client = getClient();
-  if (!client) {
-    throw new AiUnavailableError('AI Earnings Assistant is not configured.');
-  }
-
   const userContent = JSON.stringify({ question, data: retrievedData });
 
-  let response;
-  try {
-    response = await client.messages.create({
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
-      system: EARNINGS_ASSISTANT_SYSTEM_PROMPT_TEMPLATE(merchantName),
-      messages: [{ role: 'user', content: userContent }],
-    });
-  } catch (err) {
-    throw new AiUnavailableError('AI Earnings Assistant is temporarily unavailable.');
-  }
-
-  const text = response?.content?.find((block) => block.type === 'text')?.text;
-  if (!text) {
-    throw new AiUnavailableError('AI Earnings Assistant returned an unreadable response.');
-  }
+  const text = await callAiModel(EARNINGS_ASSISTANT_SYSTEM_PROMPT_TEMPLATE(merchantName), [
+    { role: 'user', content: userContent },
+  ]);
 
   return { answer: text.trim() };
 }
 
 /**
- * Deterministic keyword classification of an earnings question into a date
- * range / aggregation type — this is backend logic, never left to the AI
- * (master-doc.md Section 10.2, 26).
+ * Deterministic keyword classification of a question into a date range +
+ * aggregation type — this is backend logic, never left to the AI
+ * (master-doc.md Section 10.2, 26). best_seller/repeat_customers are checked
+ * before the plain time-range keywords so a free-typed question like "best
+ * sellers this month" still classifies as best_seller, not generic earnings.
  */
 function classifyQuestion(question) {
   const q = (question || '').toLowerCase();
   const now = new Date();
   let from;
   let rangeLabel;
+  let type = 'earnings';
 
-  if (/\btoday\b/.test(q)) {
+  if (/best[\s-]?sell/.test(q)) {
+    from = new Date(now.getFullYear(), now.getMonth(), 1);
+    rangeLabel = 'this month';
+    type = 'best_seller';
+  } else if (/repeat customer/.test(q)) {
+    from = new Date(now.getFullYear(), now.getMonth(), 1);
+    rangeLabel = 'this month';
+    type = 'repeat_customers';
+  } else if (/\btoday\b/.test(q)) {
     from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     rangeLabel = 'today';
   } else if (/\bweek\b/.test(q)) {
@@ -146,27 +259,70 @@ function classifyQuestion(question) {
   } else if (/\bmonth\b/.test(q)) {
     from = new Date(now.getFullYear(), now.getMonth(), 1);
     rangeLabel = 'this month';
-  } else if (/best[\s-]?sell/.test(q)) {
-    from = new Date(now.getFullYear(), now.getMonth(), 1);
-    rangeLabel = 'best-selling (this month)';
-  } else if (/repeat customer/.test(q)) {
-    from = new Date(now.getFullYear(), now.getMonth(), 1);
-    rangeLabel = 'repeat customers (this month)';
   } else {
     // Default fallback range: last 30 days.
     from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     rangeLabel = 'last 30 days';
   }
 
-  return { from, to: now, rangeLabel };
+  return { from, to: now, rangeLabel, type };
+}
+
+/**
+ * Total quantity sold per product across every revenue-eligible order in
+ * range (paid/partially_refunded/refunded — a partial refund still means
+ * some of the sale happened; only custom-amount line items, which have no
+ * productId, are excluded since there's no single "product" to rank).
+ */
+function computeBestSeller(orders) {
+  const revenueOrders = orders.filter((o) => REVENUE_ORDER_STATUSES.includes(o.status));
+  const soldByProduct = new Map();
+
+  for (const order of revenueOrders) {
+    for (const item of order.items || []) {
+      if (!item.productId) continue;
+      const existing = soldByProduct.get(item.productId) || { name: item.name, quantitySold: 0, orderCount: 0 };
+      existing.quantitySold += item.quantity || 0;
+      existing.orderCount += 1;
+      soldByProduct.set(item.productId, existing);
+    }
+  }
+
+  const ranked = Array.from(soldByProduct.values()).sort((a, b) => b.quantitySold - a.quantitySold);
+  return { topProduct: ranked[0] || null, productsCompared: ranked.length };
+}
+
+/**
+ * A "repeat customer" is one whose hashed identity (`customerRef` —
+ * Section 19.5's hashed phone, now populated by order.service.js's
+ * createOrder alongside the raw customerName/customerPhone display fields)
+ * appears on 2+ revenue-eligible orders in range. Falls back to raw
+ * `customerPhone` for any order created before `customerRef` existed, so
+ * grouping doesn't silently drop older data.
+ */
+function computeRepeatCustomers(orders) {
+  const revenueOrders = orders.filter((o) => REVENUE_ORDER_STATUSES.includes(o.status));
+  const ordersByCustomer = new Map();
+
+  for (const order of revenueOrders) {
+    const key = order.customerRef || order.customerPhone;
+    if (!key) continue;
+    ordersByCustomer.set(key, (ordersByCustomer.get(key) || 0) + 1);
+  }
+
+  const uniqueCustomerCount = ordersByCustomer.size;
+  const repeatCustomerCount = Array.from(ordersByCustomer.values()).filter((count) => count >= 2).length;
+  return { repeatCustomerCount, uniqueCustomerCount, ordersConsidered: revenueOrders.length };
 }
 
 /**
  * Full business logic behind POST /api/ai/earnings-assistant (master-doc.md
  * Section 22.8, 10.2, 20.2 — relocated here from ai.controller.js so the
  * controller stays a thin HTTP handler). Looks up the merchant, classifies
- * the question into a date range, retrieves + sums the matching orders, and
- * — only once real data exists — asks Claude to phrase the answer.
+ * the question into a date range + type, deterministically computes the
+ * matching figures (net revenue, best seller, or repeat customers — never
+ * left to the AI), and — only once real data exists — asks Claude to phrase
+ * the answer.
  */
 async function getEarningsAnswer({ uid, question }) {
   const merchant = await merchantRepository.findMerchantByUserId(uid);
@@ -174,23 +330,33 @@ async function getEarningsAnswer({ uid, question }) {
     throw new AppError(404, 'MERCHANT_NOT_FOUND', 'Merchant not found.');
   }
 
-  const { from, to, rangeLabel } = classifyQuestion(question);
+  const { from, to, rangeLabel, type } = classifyQuestion(question);
   const orders = await orderRepository.getOrdersInRange(merchant.id, from, to);
-
-  const totalEarnings = orders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
   const orderCount = orders.length;
 
-  const retrievedData = {
-    rangeLabel,
-    from: from.toISOString(),
-    to: to.toISOString(),
-    orderCount,
-    totalEarnings: Number(totalEarnings.toFixed(2)),
-    currency: orders[0]?.currency || null,
-  };
+  let retrievedData = { rangeLabel, from: from.toISOString(), to: to.toISOString(), orderCount };
 
-  // No data yet — return the graceful fallback per Section 26.7, distinct
-  // from a genuine 503 AI_UNAVAILABLE.
+  if (type === 'best_seller') {
+    retrievedData = { ...retrievedData, ...computeBestSeller(orders) };
+  } else if (type === 'repeat_customers') {
+    retrievedData = { ...retrievedData, ...computeRepeatCustomers(orders) };
+  } else {
+    const refundsByOrderId = await loadRefundsByOrderId(paymentRepository, merchant.id, orders);
+    const totalEarnings = orders.reduce((sum, o) => sum + netRevenue(o, refundsByOrderId), 0);
+    const paidOrderCount = orders.filter((o) => REVENUE_ORDER_STATUSES.includes(o.status)).length;
+    retrievedData = {
+      ...retrievedData,
+      paidOrderCount,
+      totalEarnings: Number(totalEarnings.toFixed(2)),
+      currency: orders.find((o) => REVENUE_ORDER_STATUSES.includes(o.status))?.currency || null,
+    };
+  }
+
+  // No orders at all in range — return the graceful fallback per Section
+  // 26.7, distinct from a genuine 503 AI_UNAVAILABLE. (Some orders but zero
+  // paid/best-seller/repeat-customer data still flows through to the AI
+  // below with real zeros/nulls — an accurate "nothing yet" is better than
+  // a generic fallback when we do have real data to report.)
   if (orderCount === 0) {
     return {
       answer: "I don't have enough data to answer that yet — there are no orders recorded for that period.",

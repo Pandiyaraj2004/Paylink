@@ -2,10 +2,31 @@ const merchantRepository = require('../repositories/merchant.repository');
 const productRepository = require('../repositories/product.repository');
 const AppError = require('../utils/AppError');
 const { assertOwnership } = require('../utils/ownership');
+const env = require('../config/env');
 
 const MAX_NAME_LEN = 60;
 // A pragmatic, non-exhaustive check — plausible ISO 4217 alphabetic codes.
 const ISO_CURRENCY_RE = /^[A-Z]{3}$/;
+
+/**
+ * Rejects a currency that isn't in env.SURFBOARD_ACTIVE_CURRENCIES — a
+ * narrower, config-driven check than ISO_CURRENCY_RE above (which only
+ * checks shape). Live-verified against the real Surfboard demo account:
+ * EUR/NOK both fail order creation with a real Surfboard error (OR_0004:
+ * currency code not associated with this merchant) — only SEK is actually
+ * accepted today. Catching this at catalog-item creation time, rather than
+ * only at checkout, gives the entrepreneur a clear error up front instead
+ * of a customer hitting a payment failure later.
+ */
+function assertActiveCurrency(currency, label) {
+  if (!env.SURFBOARD_ACTIVE_CURRENCIES.includes(currency)) {
+    throw new AppError(
+      400,
+      'VALIDATION_ERROR',
+      `${label} must be one of ${env.SURFBOARD_ACTIVE_CURRENCIES.join(', ')} (the currencies currently active for this store).`
+    );
+  }
+}
 
 function validateItem(item, index) {
   if (!item || typeof item !== 'object') {
@@ -22,6 +43,7 @@ function validateItem(item, index) {
   if (typeof currency !== 'string' || !ISO_CURRENCY_RE.test(currency)) {
     throw new AppError(400, 'VALIDATION_ERROR', `items[${index}].currency must be a 3-letter ISO 4217 code.`);
   }
+  assertActiveCurrency(currency, `items[${index}].currency`);
 }
 
 /**
@@ -61,6 +83,7 @@ function validatePartialItem(patch) {
     if (typeof update.currency !== 'string' || !ISO_CURRENCY_RE.test(update.currency)) {
       throw new AppError(400, 'VALIDATION_ERROR', 'currency must be a 3-letter ISO 4217 code.');
     }
+    assertActiveCurrency(update.currency, 'currency');
   }
   if (Object.prototype.hasOwnProperty.call(update, 'isCustomAllowed') && typeof update.isCustomAllowed !== 'boolean') {
     throw new AppError(400, 'VALIDATION_ERROR', 'isCustomAllowed must be a boolean.');

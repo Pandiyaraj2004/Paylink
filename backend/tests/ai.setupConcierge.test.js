@@ -13,20 +13,26 @@ jest.mock('../src/config/firebase', () => {
   };
 });
 
+// config/env.js is a singleton computed once at require-time from real
+// .env/.env.local — deleting process.env.* in beforeEach has no effect on
+// its already-cached values (Phase 9: this now includes real
+// OPENROUTER_API_KEY/GEMINI_API_KEY, not just ANTHROPIC_API_KEY). Mock the
+// module directly so this test genuinely exercises the "no AI provider
+// configured" path instead of making a real network call.
+jest.mock('../src/config/env', () => ({
+  ...jest.requireActual('../src/config/env'),
+  OPENROUTER_API_KEY: '',
+  GEMINI_API_KEY: '',
+  ANTHROPIC_API_KEY: '',
+}));
+
 const firebaseConfig = require('../src/config/firebase');
 const app = require('../src/app');
 
-describe('POST /api/ai/setup-concierge — no ANTHROPIC_API_KEY configured', () => {
-  const originalKey = process.env.ANTHROPIC_API_KEY;
-
+describe('POST /api/ai/setup-concierge — no AI provider configured', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    delete process.env.ANTHROPIC_API_KEY;
     firebaseConfig.__verifyIdToken.mockResolvedValue({ uid: 'user-1', email: 'user@example.com' });
-  });
-
-  afterAll(() => {
-    if (originalKey) process.env.ANTHROPIC_API_KEY = originalKey;
   });
 
   it('returns a clean 503 AI_UNAVAILABLE without crashing', async () => {

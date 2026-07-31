@@ -44,10 +44,39 @@ async function getMerchantBySlug(slug) {
   return getMerchantById(merchantId);
 }
 
+/**
+ * Atomically reserves a unique `pageSlugs/{slug}` lookup doc (Section 19.2:
+ * "read pageSlugs/{slug}, and only proceed if it doesn't already exist").
+ * Falls back to `${baseSlug}-2`, `-3`, ... on collision — practically always
+ * resolves on the first attempt.
+ */
+async function reservePageSlug(merchantId, baseSlug) {
+  const database = db();
+  let candidate = baseSlug;
+  let suffix = 2;
+
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const slugRef = database.collection('pageSlugs').doc(candidate);
+    // eslint-disable-next-line no-await-in-loop
+    const reserved = await database.runTransaction(async (tx) => {
+      const snap = await tx.get(slugRef);
+      if (snap.exists) return false;
+      tx.set(slugRef, { merchantId });
+      return true;
+    });
+    if (reserved) return candidate;
+    candidate = `${baseSlug}-${suffix}`;
+    suffix += 1;
+  }
+
+  throw new Error(`Could not reserve a unique page slug for base "${baseSlug}".`);
+}
+
 module.exports = {
   createMerchant,
   getMerchantById,
   findMerchantByUserId,
   updateMerchant,
   getMerchantBySlug,
+  reservePageSlug,
 };

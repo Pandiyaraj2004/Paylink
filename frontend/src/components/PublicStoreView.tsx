@@ -1,10 +1,20 @@
 import { useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { Minus, Plus, PackageX } from 'lucide-react';
+import { Minus, Plus, PackageX, Star } from 'lucide-react';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
 import { cn } from '@/utils/cn';
 import type { PublicPage, Product } from '@/api/merchants';
+
+function StoreStars({ count }: { count: number }) {
+  return (
+    <div className="flex items-center gap-0.5" aria-label={`${count} out of 5 stars`}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <Star key={n} className={cn('h-3.5 w-3.5', n <= count ? 'fill-warning text-warning' : 'text-border')} />
+      ))}
+    </div>
+  );
+}
 
 export type StoreSelection =
   | { kind: 'item'; item: Product; quantity: number }
@@ -111,10 +121,19 @@ export function PublicStoreView({ page, mode, onProceed }: PublicStoreViewProps)
               >
                 <Card
                   onClick={() => selectItem(item)}
+                  onKeyDown={(e) => {
+                    if (isLive && (e.key === 'Enter' || e.key === ' ')) {
+                      e.preventDefault();
+                      selectItem(item);
+                    }
+                  }}
+                  role={isLive ? 'button' : undefined}
+                  tabIndex={isLive ? 0 : undefined}
+                  aria-pressed={isLive ? isSelected : undefined}
                   variant={isSelected ? 'glass' : 'solid'}
                   className={cn(
                     'flex h-full flex-col gap-3 transition-colors',
-                    isLive && 'cursor-pointer hover:border-primary/50',
+                    isLive && 'cursor-pointer hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
                     isSelected && 'border-primary'
                   )}
                 >
@@ -192,9 +211,33 @@ export function PublicStoreView({ page, mode, onProceed }: PublicStoreViewProps)
       {isLive && !isEmpty && (
         <div className="mt-6">
           <Button className="w-full" disabled={!canProceed} onClick={handleProceed}>
-            {page.isOpen ? 'Proceed to Checkout' : 'Not currently taking orders'}
+            {page.isOpen ? 'Pay Now' : 'Not currently taking orders'}
           </Button>
         </div>
+      )}
+
+      {/* Customer Reviews (Section 15.1/14.11) — sourced from the same
+          `rating` field already stored per order, surfaced here without
+          any customer identity (Section 19.5, Privacy). Only rendered when
+          there's at least one review, on either preview or live mode. */}
+      {page.reviews.length > 0 && (
+        <Card className="mt-6">
+          <div className="flex items-center gap-3">
+            <h2 className="text-body-l font-semibold text-text-primary">Customer reviews</h2>
+            <StoreStars count={Math.round(page.ratingAverage)} />
+            <span className="text-caption text-text-secondary">
+              {page.ratingAverage.toFixed(1)} ({page.ratingCount})
+            </span>
+          </div>
+          <div className="mt-4 flex flex-col gap-3 divide-y divide-border">
+            {page.reviews.map((review, i) => (
+              <div key={i} className={i > 0 ? 'pt-3' : undefined}>
+                <StoreStars count={review.stars} />
+                {review.comment && <p className="mt-1 text-body-m text-text-secondary">{review.comment}</p>}
+              </div>
+            ))}
+          </div>
+        </Card>
       )}
     </div>
   );

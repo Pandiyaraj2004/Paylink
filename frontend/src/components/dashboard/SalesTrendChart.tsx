@@ -6,7 +6,8 @@ import { Card } from '@/components/Card';
 
 interface OrderLike {
   id: string;
-  totalAmount: number;
+  /** Net of refunds, 0 for a pending/failed/cancelled order (merchant.service.js's getMerchantSummary) — never totalAmount directly, or this trend would disagree with the stat cards above it. */
+  netAmount: number;
   currency: string;
   createdAt: string;
 }
@@ -25,7 +26,7 @@ export default function SalesTrendChart({ orders, currency }: { orders: OrderLik
     const byDay = new Map<string, number>();
     for (const order of orders) {
       const day = new Date(order.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-      byDay.set(day, (byDay.get(day) ?? 0) + order.totalAmount);
+      byDay.set(day, (byDay.get(day) ?? 0) + order.netAmount);
     }
     return Array.from(byDay.entries()).map(([day, total]) => ({ day, total }));
   }, [orders]);

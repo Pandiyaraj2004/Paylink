@@ -57,7 +57,7 @@ const CATEGORIES = [
 
 export default function Register() {
   const navigate = useNavigate();
-  const { user, role, signUp, signInWithGoogle } = useAuth();
+  const { user, role, signUp, signInWithGoogle, sessionError, retrySession } = useAuth();
   const [step, setStep] = useState<1 | 2>(1);
   const [step1Data, setStep1Data] = useState<Step1Values | null>(null);
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -69,6 +69,15 @@ export default function Register() {
       navigate(getRoleHomePath(role), { replace: true });
     }
   }, [user, role, navigate]);
+
+  // See Login.tsx's identical effect — Firebase auth can succeed (the
+  // "Welcome!" toast already fired) while the backend session call that
+  // resolves `role` fails, which otherwise looks exactly like a silent hang.
+  useEffect(() => {
+    if (user && sessionError) {
+      toast.error("Signed in, but couldn't finish loading your account. Please try again.");
+    }
+  }, [user, sessionError]);
 
   const step1Form = useForm<Step1Values>({ resolver: zodResolver(step1Schema) });
   const step2Form = useForm<Step2Values>({ resolver: zodResolver(step2Schema) });
@@ -115,6 +124,17 @@ export default function Register() {
     <AuthLayout>
       <h1 className="font-display text-h2 font-semibold text-text-primary">Create your PayLink account</h1>
       <p className="mt-1 text-body-m text-text-secondary">Talk, don&apos;t fill forms.</p>
+
+      {user && sessionError && (
+        <div className="mt-4 flex flex-col items-start gap-2 rounded-md border border-danger/40 bg-danger/10 px-4 py-3">
+          <p className="text-body-m text-text-primary">
+            You're signed in, but we couldn't load your account. This is usually temporary.
+          </p>
+          <Button variant="ghost" onClick={() => retrySession()}>
+            Try again
+          </Button>
+        </div>
+      )}
 
       {/* Progress indicator */}
       <div className="mt-5 flex gap-2" aria-label={`Step ${step} of 2`}>

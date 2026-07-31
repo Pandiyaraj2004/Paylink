@@ -36,9 +36,9 @@ export async function setupConcierge(
 }
 
 export interface EarningsAssistantResponse {
-  answer?: string;
-  available?: false;
-  message?: string;
+  /** Always populated — even when `available` is false, this is the specific graceful message to show (never a generic fallback the backend didn't actually send). */
+  answer: string;
+  available: boolean;
 }
 
 /** POST /api/ai/earnings-assistant (Section 22.8). */

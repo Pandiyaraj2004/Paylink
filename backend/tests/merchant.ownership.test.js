@@ -18,6 +18,12 @@ jest.mock('../src/repositories/merchant.repository', () => ({
   updateMerchant: jest.fn(),
   createMerchant: jest.fn(),
   findMerchantByUserId: jest.fn(),
+  // reservePageSlug is called by updateMerchantProfile whenever the merchant
+  // has no pageSlug yet (Section 19.2) — this mock was missing entirely,
+  // which broke the "allows the owner" case below on any merchant fixture
+  // without a pageSlug. Not related to Phase 6; fixed in passing while
+  // confirming the full suite still passes.
+  reservePageSlug: jest.fn(),
 }));
 
 const firebaseConfig = require('../src/config/firebase');
@@ -62,6 +68,7 @@ describe('PATCH /api/merchants/:id — ownership enforcement', () => {
       status: 'active',
       businessName: 'New Name',
     });
+    merchantRepository.reservePageSlug.mockResolvedValue('new-name');
 
     const res = await request(app)
       .patch('/api/merchants/merchant-1')

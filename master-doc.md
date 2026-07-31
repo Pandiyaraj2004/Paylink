@@ -1,9 +1,9 @@
-# PayLink — Master Documentation (README.md)
+# PayLink — Master Documentation
 
-> **Single Source of Truth** for the PayLink platform. This document is written so that a new engineer, designer, or an AI coding assistant (Claude Code, Cursor, GitHub Copilot, etc.) can build the entire product from this file alone, without needing to ask clarifying questions about scope, business rules, data model, or workflows.
+> **Single Source of Truth** for the PayLink platform. This document is written so that a new engineer, designer, or an AI coding assistant (Claude Code, Cursor, GitHub Copilot, etc.) can build the entire product from this file alone, without needing to ask clarifying questions about scope, business rules, data model, or workflows. For how to actually run the project, a page-by-page manual test script, and a Surfboard integration summary, see the repository root's `README.md` instead — this file is the product/architecture spec, that one is the practical getting-started guide.
 
 **Version:** 1.0
-**Status:** Pre-development / Specification Complete
+**Status:** Most of Phases 1–13 implemented — see `README.md`'s own status notes for what's real vs. still spec-only
 **Market:** Europe (Nordic-first — Sweden, Finland, Norway), built on Surfboard Payments APIs
 **Owner:** PayLink Product Team
 
@@ -231,7 +231,7 @@ Individuals selling goods or services who currently lack a registered business o
 Anyone paying a specific entrepreneur they already know, via a shared link, WhatsApp/Instagram message, or an in-person QR code. Not a discovery audience — they arrive already knowing who they're paying.
 
 ### Admin
-The PayLink internal operations team, responsible for approving new entrepreneur signups, monitoring platform-wide transaction volume, and resolving disputes/escalated refunds.
+The PayLink internal operations team, responsible for monitoring live entrepreneur activity, spot-checking newly onboarded stores, and resolving disputes/escalated refunds.
 
 ### Platform Owner
 The legal entity operating PayLink — holds the single verified Surfboard merchant identity, is the party of record for regulatory/compliance purposes, and earns transaction-based revenue.
@@ -271,9 +271,9 @@ Synonymous with "Primary User" above — used interchangeably with "Entrepreneur
 
 ### Persona 4 — PayLink Admin — Johan
 - **Role:** Operations analyst at PayLink
-- **Goals:** Approve legitimate new sub-merchants quickly, catch suspicious signups, resolve disputes fairly
+- **Goals:** Spot bad-actor stores quickly after they go live, catch suspicious signups early, resolve disputes fairly
 - **Problems:** Needs visibility across thousands of tiny merchants without being overwhelmed by noise
-- **Needs:** Clear approval queue, flagged-transaction views, audit trail for every admin action
+- **Needs:** A clear "recently onboarded" monitoring view, flagged-transaction views, audit trail for every admin action
 
 
 ---
@@ -326,7 +326,7 @@ Synonymous with "Primary User" above — used interchangeably with "Entrepreneur
 - FR-30: Rating must be displayed only on that entrepreneur's own page (not used for cross-platform discovery/search)
 
 ### 7.8 Admin
-- FR-31: Admin must be able to view and approve/reject new entrepreneur signups
+- FR-31: Admin must be able to view all entrepreneur accounts and suspend/reactivate them
 - FR-32: Admin must be able to view platform-wide transaction volume and per-merchant breakdowns
 - FR-33: Admin must be able to view and resolve disputes/escalated refund requests
 - FR-34: Every admin action must be logged with admin ID, action type, target, and timestamp
@@ -376,7 +376,7 @@ Synonymous with "Primary User" above — used interchangeably with "Entrepreneur
 - Optional star rating
 
 **Admin**
-- Entrepreneur approval queue
+- Entrepreneur monitoring & suspend/reactivate controls
 - Platform dashboard (volume, growth)
 - Dispute/refund escalation handling
 - Basic reporting
@@ -426,31 +426,37 @@ PayLink has exactly two AI modules in the MVP. Both are designed to be **additiv
 
 ### 10.1 AI Setup Concierge
 
-**Purpose:** Convert a single free-text business description into a fully configured store (catalog, branding, payment page).
+**Purpose:** Convert a natural-language conversation into a fully configured storefront — not just a catalog, but the complete business profile the storefront (Section 15.1) and website generation step (10.1b) need.
 
-**Trigger:** First-time entrepreneur, immediately after account creation, or re-invoked any time from Settings ("Update my store with AI").
+**Trigger:** First-time entrepreneur, during Onboarding (Section 14.2), or re-invoked any time from Settings ("Update my store with AI").
+
+**Full field set the AI naturally collects through conversation (matching Section 14.2/19.2):** Shop Name, Business Category, Tagline, Description, Address (line 1/2, city, state, postal code, country), Google Maps Location, Phone, WhatsApp, Email, Working Hours, Logo, Cover Image, Gallery Images, Products/Services + Pricing, Social Links, Website Link, FAQs, Return Policy, Privacy Policy, Business Highlights/Why Choose Us, Payment Preferences. **No bank/settlement fields — onboarding never asks about them, on either the AI or manual path (Section 14.2, Section 30 rule 12).** The AI intelligently infers what it reasonably can (e.g., suggesting a category from the business description) but **always surfaces every inferred or collected field for the entrepreneur to review and edit before publishing** — inference is a convenience for speed, never a substitute for confirmation.
 
 **Prompt Flow:**
-1. System prompt establishes the AI's role: *"You are PayLink's setup assistant. Extract a structured store profile from what the entrepreneur tells you. Ask at most one clarifying question at a time. Never invent prices or names that weren't mentioned."*
+1. System prompt establishes the AI's role: *"You are PayLink's setup assistant. Extract a structured business profile from what the entrepreneur tells you. Ask at most one clarifying question at a time. Never invent prices, addresses, or names that weren't mentioned. Never ask about bank accounts or settlement details — that's out of scope for this conversation entirely."*
 2. User message: free-text business description (e.g., "I'm a tailor. Shirt stitching is 300, blouse is 500, and sometimes I do custom wedding blouses around 1200.")
-3. AI responds with a structured draft (JSON) of catalog items + a suggested tagline, and asks a clarifying question only if something is genuinely ambiguous (e.g., currency not specified, price range instead of fixed price).
-4. Entrepreneur confirms or edits inline.
-5. On confirmation, backend calls Store Capabilities + Configure Branding APIs, then generates QR + poster.
+3. AI responds with a structured draft (JSON) covering whatever fields have been mentioned so far, and asks clarifying questions — one at a time — to fill in what's still missing from the storefront/profile field set above.
+4. Entrepreneur confirms or edits inline, field by field.
+5. On confirmation, backend calls Store Capabilities + Configure Branding APIs and triggers AI Website Generation (10.1b) — no `payout/details` write happens here; that subcollection stays untouched until the entrepreneur separately visits Settings → Bank Details (14.12).
 
 **System Prompt (representative):**
 ```
 You are PayLink's AI Setup Concierge. Your job is to turn a merchant's
-free-text description of their business into a structured store profile.
+free-text description of their business into a structured business
+profile covering identity, contact, and catalog — never settlement/bank
+details, which this conversation must never ask about.
 
 Rules:
 - Only use information the merchant actually provided. Never invent prices,
-  item names, or business details.
-- If a price or currency is ambiguous, ask ONE clarifying question before
-  proceeding — do not guess.
+  addresses, or business facts.
+- If a price, currency, or address field is ambiguous, ask ONE clarifying
+  question before proceeding — do not guess.
 - Support both fixed-price catalog items and "custom amount" items
   (e.g., "custom wedding blouse — price varies").
-- Output a JSON object: { businessName, tagline, items: [{name, price,
-  currency, isCustom}], clarifyingQuestion (nullable) }.
+- Output a JSON object matching the merchant profile schema (name, tagline,
+  description, address, contact, hours, items, socialLinks, etc.) — this
+  schema has no bank/payout fields at all. Leave any field not yet
+  mentioned as null rather than guessing.
 - Keep the tagline under 10 words, friendly, and specific to the business
   described — never generic.
 ```
@@ -461,10 +467,23 @@ Rules:
 
 **Business Logic Applied After AI Output:**
 - Prices are validated as positive numbers before being sent to Store Capabilities
-- Tagline is checked against a profanity/length filter
-- If the AI's clarifying question goes unanswered for more than 2 minutes, the UI falls back to a simple manual form pre-filled with whatever the AI did understand
+- Tagline and description are checked against a profanity/length filter
+- If the AI's clarifying question goes unanswered for more than 2 minutes, the UI falls back to the relevant step of the manual onboarding form, pre-filled with whatever the AI did understand
 
-**Fallback:** If the AI service is unavailable or returns malformed output, the entrepreneur is seamlessly routed to a manual "Add your first item" form — the AI is a convenience layer, never a hard dependency for onboarding.
+**Fallback:** If the AI service is unavailable or returns malformed output, the entrepreneur is seamlessly routed to the manual onboarding path (Section 14.2) — the AI is a convenience layer, never a hard dependency for onboarding.
+
+### 10.1b AI Website Generation
+*(New — the step immediately following AI Setup Concierge confirmation, distinct from catalog/profile collection above. This is what actually assembles the storefront the merchant sees in the Website Preview, Section 14.2b.)*
+
+**Purpose:** Automatically assemble the full storefront (Section 15.1) from the confirmed onboarding data — no separate design step, no template picker, no additional merchant effort beyond what they already provided.
+
+**Sections generated:** Hero Section, Business Banner, About Section, Services, Products, Gallery, Reviews (empty state until the first review arrives), Contact Section, Business Information, Google Map, Working Hours, WhatsApp Button, Call Button, Payment Widget (the Pay Securely modal, Section 15.1), QR Payment, Share Button.
+
+**How this works:** this is **not** a second AI conversation — it's deterministic assembly. Every section above maps directly to fields already collected by the AI Setup Concierge or the manual form (Section 14.2/19.2); the "generation" step is populating Section 15.1's storefront template with that data, not an independent creative process that could introduce new invented content. This keeps the website's content strictly bounded by what the merchant actually confirmed — no hallucinated business details ever reach the public storefront.
+
+**Business Logic:** Sections with no data yet (e.g., Gallery with zero uploaded images, Reviews before any order has been rated) render their existing empty states (Section 17.7) rather than being hidden or filled with placeholder content.
+
+**Fallback:** Since this step is deterministic rather than a live AI call, there's no "AI unavailable" failure mode here the way there is for the conversational parts — a failure here is treated as a standard rendering error (Section 29), not an AI-specific fallback.
 
 ### 10.2 AI Earnings Assistant
 
@@ -512,27 +531,29 @@ Rules:
 
 ```mermaid
 flowchart TD
-    A[Entrepreneur Signs Up - Email/Password or Google] --> B[AI Setup Concierge Conversation]
+    A[Entrepreneur Signs Up - Email/Password or Google] --> B[Onboarding - AI Path or Manual Path]
     B --> C[Store Capabilities + Branding Configured]
-    C --> D[QR Code + Poster Generated]
-    D --> E[Store Goes Live]
-    E --> F[Customer Opens Link or Scans QR]
-    F --> G[Customer Selects Item or Custom Amount]
-    G --> H[Customer Adds Note + Optional Tip]
-    H --> I[Customer Pays - Card / Swish / Wallet]
-    I --> J{Payment Successful?}
-    J -->|Yes| K[Receipt Generated]
-    J -->|No| L[Failure Shown + Retry Option]
-    K --> M[Merchant Dashboard Updates]
-    M --> N[Entrepreneur Marks Fulfilled or Issues Refund]
-    N --> O[Optional Customer Rating]
-    M --> P[Entrepreneur Asks AI Earnings Assistant]
-    P --> Q[AI Retrieves Data + Answers in Plain Language]
-    K --> R[Scheduled Payout to Entrepreneur Bank Account]
-    E --> S[Admin Reviews New Signup]
-    S -->|Approved| E
-    S -->|Rejected| T[Entrepreneur Notified - Cannot Go Live]
+    C --> D[Store Goes Live Automatically]
+    D --> D2[QR Code + Poster Generated]
+    D2 --> E[Customer Opens Link or Scans QR]
+    E --> F[Customer Selects Item or Custom Amount]
+    F --> G[Pay Securely Modal - Note + Optional Tip]
+    G --> H[Customer Pays - Card / Swish / Wallet]
+    H --> I{Payment Successful?}
+    I -->|Yes| J[Receipt Generated]
+    I -->|No| K[Failure Shown Inline + Retry Option]
+    J --> L[Merchant Dashboard Updates]
+    L --> M[Entrepreneur Marks Fulfilled or Issues Refund]
+    M --> N[Optional Customer Rating]
+    L --> O[Entrepreneur Asks AI Earnings Assistant]
+    O --> P[AI Retrieves Data + Answers in Plain Language]
+    J --> Q[Scheduled Payout to Entrepreneur Bank Account]
+    D -.monitored anytime.-> R[Admin Reviews Live Merchants]
+    R -->|Suspicious activity found| S[Admin Suspends Merchant]
+    S --> T[Checkout Disabled Immediately]
 ```
+
+*Note: there is no admin approval step between Store Setup and Store Goes Live (Section 30, rule 1) — Admin's role is post-launch monitoring and suspension only (Section 16.2), shown as a parallel path rather than a gate in this diagram.*
 
 ### 11.2 Step-by-Step Narrative
 
@@ -545,47 +566,42 @@ flowchart TD
 4. Backend calls Surfboard **Multi Merchant Groups** API to create a new sub-merchant record under PayLink's single verified identity.
 5. New entrepreneur record created in `merchants` table, status = `pending_setup`.
 
-**Store Setup (AI-Assisted)**
-6. Entrepreneur describes their business to the AI Setup Concierge.
-7. AI returns structured catalog + tagline draft.
-8. Entrepreneur confirms (or edits).
-9. Backend calls **Store Capabilities** (catalog, custom-amount toggle) and **Configure Branding** (photo, tagline, theme) APIs.
-10. Merchant status updated to `pending_approval`.
+**Store Setup (AI or Manual)**
+6. Entrepreneur chooses to describe their business to the AI Setup Concierge, or fill in the manual multi-step form directly (Section 14.2) — both paths collect the same fields.
+7. (AI path only) AI returns a structured profile + catalog draft for the entrepreneur to confirm or edit.
+8. Backend calls **Store Capabilities** (catalog, custom-amount toggle) and **Configure Branding** (photo, logo, cover banner, theme, hours, contact, social links) APIs.
+9. Merchant status is set directly to `active` — **there is no `pending_approval` step or admin review gate.** This is a deliberate trade-off (Section 30, rule 1; Section 36, Risks).
 
-**Admin Approval**
-11. Admin reviews the new sub-merchant in the approval queue.
-12. Admin approves → status becomes `active`; or rejects → entrepreneur notified with a reason.
-
-**QR Generation**
-13. On approval, backend generates a unique public page URL and a corresponding QR code image.
-14. Shareable poster (name, tagline, QR) auto-generated as a downloadable image.
+**Going Live**
+10. Immediately on completing step 9, backend generates a unique public page URL and a corresponding QR code image (both rendered client-side, Section 21.8 — no backend file generation).
+11. Shareable poster (name, tagline, QR) auto-generated as a downloadable image, also client-side.
 
 **Payments**
-15. Customer opens the public page (no login required).
-16. Customer selects a catalog item or enters a custom amount, adds an optional note and tip.
-17. Backend calls **Payment Processing** (Make Your Payments) with selected **Payment Methods**.
-18. Surfboard processes the payment and returns a result synchronously, confirmed asynchronously via webhook.
+12. Customer opens the public storefront page (no login required) — the full page described in Section 15.1, not just a bare catalog.
+13. Customer taps a specific service's Pay button (or opens a shared payment link with a `pay` query param), which opens the Pay Securely modal pre-filled with that item/amount.
+14. Customer adds an optional note and tip, then pays; backend calls **Payment Processing** (Make Your Payments) with the selected **Payment Method**, redirecting to Surfboard's hosted Payment Page.
+15. Surfboard processes the payment and returns a result synchronously, confirmed asynchronously via webhook.
 
 **Refund**
-19. Entrepreneur selects an order and requests a refund (full or partial).
-20. Backend calls **Refund Operations**; Surfboard processes the reversal.
-21. Customer notified of the refund.
+16. Entrepreneur selects an order and requests a refund (full or partial).
+17. Backend calls **Refund Operations**; Surfboard processes the reversal.
+18. Customer notified of the refund.
 
 **Receipt & Bill**
-22. On successful payment (and again on refund), backend calls the **Receipts** API to generate a proof-of-transaction reference, and separately renders a downloadable PDF bill (item, price, merchant name/logo, timestamp) from the order data — both shown in-browser and available for download/email.
+19. On successful payment (and again on refund), backend calls the **Receipts** API to generate a proof-of-transaction reference, and separately renders a downloadable PDF bill (item, price, merchant name/logo, timestamp) from the order data — both shown in-browser and available for download.
 
 **Dashboard / Analytics**
-23. Every payment event updates the entrepreneur's dashboard in near-real-time (earnings totals, order list).
-24. Entrepreneur may ask the AI Earnings Assistant a free-text question at any time.
+20. Every payment event updates the entrepreneur's dashboard in near-real-time (earnings totals, order list).
+21. Entrepreneur may ask the AI Earnings Assistant a free-text question at any time.
 
 **Settlement**
-25. PayLink holds a brief settlement reserve per Surfboard's standard settlement schedule, then transfers the remaining balance to the entrepreneur's linked bank account on the configured payout cycle.
+22. PayLink holds a brief settlement reserve per Surfboard's standard settlement schedule, then transfers the remaining balance to the entrepreneur's linked bank account on the configured payout cycle.
 
 **Notifications**
-26. SMS/email/in-app notifications fire on: successful payment, refund issued, recurring charge upcoming, recurring charge failed, admin approval/rejection.
+23. Email/push/in-app notifications fire on: successful payment, refund issued, recurring charge upcoming, recurring charge failed, store going live, and (if it happens) suspension — no SMS anywhere in this flow (Section 27).
 
-**Admin**
-27. Admin can view platform-wide volume, individual merchant activity, and resolve disputes at any point independent of the above flow.
+**Admin — Post-Launch Monitoring, Not a Gate**
+24. Admin can view platform-wide volume and individual merchant activity, spot-check recently onboarded stores, resolve disputes, and — the one action that actually stops a bad-actor store — suspend a merchant at any point, independent of and after the above flow (Section 16.2).
 
 
 ---
@@ -601,11 +617,10 @@ journey
       Hears about PayLink from a friend: 4: Entrepreneur
       Signs up with email/password or Google: 5: Entrepreneur
     section AI Setup
-      Describes business to AI Concierge: 5: Entrepreneur
-      Reviews and confirms catalog: 4: Entrepreneur
-      Waits for admin approval: 3: Entrepreneur
+      Describes business to AI Concierge, or fills in the manual form: 5: Entrepreneur
+      Reviews and confirms profile: 4: Entrepreneur
     section Going Live
-      Store approved and QR generated: 5: Entrepreneur
+      Store goes live automatically, QR generated: 5: Entrepreneur
       Shares poster on WhatsApp/Instagram: 5: Entrepreneur
     section First Sale
       Receives first payment notification: 5: Entrepreneur
@@ -641,9 +656,8 @@ journey
 journey
     title Admin Journey - Daily Operations
     section Morning Review
-      Checks new signup approval queue: 4: Admin
-      Approves legitimate entrepreneurs: 5: Admin
-      Flags suspicious signup for review: 2: Admin
+      Checks recently onboarded stores for anything suspicious: 4: Admin
+      Suspends a merchant showing bad-actor signals: 2: Admin
     section Monitoring
       Reviews platform-wide transaction volume: 4: Admin
       Checks flagged/high-refund merchants: 3: Admin
@@ -657,7 +671,7 @@ journey
 
 ## 13. Complete Page Documentation
 
-> **Consolidated structure:** PayLink is organized into **18 pages** (8 Entrepreneur, 4 Customer, 6 Admin) — down from an earlier 36-page draft that counted several tabs and UI elements as if they were separate destinations. Related views are now grouped as **tabs within one page** rather than separate screens, and two things that were never really "pages" (the AI chat button and the notification bell) are documented in Section 17 as persistent UI elements instead. Nothing was removed — every capability from the earlier draft still exists, it's just organized the way a user would actually navigate it.
+> **Structure:** PayLink is organized into **1 shared entry point (Landing Page) + 13 Entrepreneur pages + 3 Customer pages + 7 Admin pages = 24 pages total.** This has grown from an earlier, more tightly consolidated count as Payment Links, QR Payments, Analytics, and Reviews were promoted to their own distinct dashboard sections (Section 14) per the current final product vision — a deliberate reversal of some earlier tab-consolidation work, not an oversight. Several things are still deliberately *not* counted as pages: the AI chat floating button, the notification bell, and the entire Checkout flow (which is the "Pay Securely" modal living on top of the Public Store page, Section 15.1, rather than its own route) are documented as persistent UI elements/components in Sections 14, 15, and 17 instead of as pages.
 
 Every page below uses the same template so a developer or AI assistant can build any page in isolation without needing surrounding context:
 
@@ -675,7 +689,22 @@ Every page below uses the same template so a developer or AI assistant can build
 
 ---
 
-## 14. Entrepreneur Pages (8)
+## 13.5 Landing Page (Shared Entry Point)
+*(New — the application's actual first screen, existing above and before both the Entrepreneur and Admin page sets below. Neither role "owns" it.)*
+- **Purpose:** The very first screen anyone sees on opening PayLink — introduces the product briefly and lets the visitor choose which role they are.
+- **Layout & Components:** Brief PayLink value-proposition copy/hero, two clear role-selection cards/buttons: **"I'm a Merchant"** and **"Admin Login."**
+- **Validation & Business Logic:** Purely a routing decision — no data is read or written here. Choosing Merchant routes to Auth (14.1); choosing Admin routes to the Admin Login screen (16.0, using Section 24.4's Access Code + Password, not Firebase).
+- **API Calls:** None.
+- **Navigation:** → Auth (14.1) or → Admin Login (16.0).
+- **States:** Static — no loading/empty/failure states beyond the page itself failing to load, which is a generic app-level concern, not specific to this page.
+- **Permissions:** Fully public, no login required, no role selected yet.
+- **Future Improvements:** Localized landing copy per detected region/language.
+
+---
+
+## 14. Entrepreneur Pages (14, plus one onboarding sub-step)
+
+> **Page count note:** this grew from an earlier 8-page consolidation once Payment Links, QR Payments, Analytics, and Reviews were promoted to their own distinct dashboard sections per the current final product vision, rather than staying folded into Orders/Products/Dashboard as tabs. This is a deliberate reversal of some of the earlier consolidation work — not an oversight — because this revision's dashboard nav explicitly lists them as separate items. It grew by one more (13 → 14) when Profile (14.14) was split out of the former combined Settings page, so storefront/business-identity editing has its own home separate from account-level Settings/Bank Details.
 
 ### 14.1 Auth
 *(Merges the former Signup, Login, and OTP Verification screens — one flow, not three destinations. Login method changed from phone OTP to Firebase email/password + Google Sign-In after Twilio reliability issues during development — see Section 36, Risks.)*
@@ -683,57 +712,102 @@ Every page below uses the same template so a developer or AI assistant can build
 - **Layout & Components:** Email + password fields with "Sign Up" / "Log In" toggle, a "Continue with Google" button (Firebase's `signInWithPopup` + `GoogleAuthProvider`), and a "Forgot password?" link. Copy changes based on whether the account is recognized, but it's the same screen underneath.
 - **Validation & Business Logic:** Email must be valid format; password minimum 8 characters, enforced client-side before submission and again by Firebase Authentication server-side. Account creation, login, Google Sign-In, and password reset are all handled directly by the Firebase Authentication client SDK — the frontend does not send credentials to PayLink's own backend at all.
 - **API Calls:** None for authentication itself (handled entirely by the Firebase Auth SDK). On first sign-in only, the frontend calls `POST /api/auth/session` so the backend can verify the new Firebase ID token and create the corresponding `merchants` document.
-- **Navigation:** → AI Setup Concierge (first-time users) or → Dashboard (returning users).
+- **Navigation:** → Onboarding, where the entrepreneur chooses AI or manual setup (first-time users) or → Dashboard (returning users).
 - **States:** Loading spinner while Firebase processes sign-up/login/Google popup; inline field-level error (e.g., "wrong password", "email already in use") sourced from Firebase Auth's own error codes.
 - **Permissions:** Public, unauthenticated (pre-session).
 - **Future Improvements:** "Remember this device" longer-lived sessions; additional social providers (Apple, Facebook) if requested by users.
 
-### 14.2 AI Setup Concierge
-- **Purpose:** Configure the entrepreneur's entire store from a natural-language conversation.
-- **Layout & Components:** Chat interface (message bubbles), typing indicator, inline "confirm catalog" card summarizing extracted items with edit icons, "Confirm & Publish" button.
-- **Validation & Business Logic:** All prices validated as positive numbers in a supported currency before submission; profanity/length filter on tagline; at least one catalog item or the custom-amount toggle must be enabled before publishing is allowed.
-- **API Calls:** `POST /api/ai/setup-concierge`, then on confirmation → `POST /api/merchants/:id/products` (bulk), `PATCH /api/merchants/:id` (branding).
-- **Navigation:** → Admin approval pending screen → Dashboard once approved.
-- **States:** Typing/loading indicator while AI responds; failure state falls back to a manual "Add Item" form on the Products page; empty state shown if the entrepreneur skips straight to manual entry.
+### 14.2 Onboarding
+*(Offers two explicit, equal entry paths — "Set up with AI" and "Set up manually" — both producing an identical merchant profile shape. Neither is a degraded fallback of the other; the AI path is the flagship experience, the manual form exists for entrepreneurs who prefer typing details directly or for fields (business hours, gallery photos) that are easier to fill in directly than describe. **Store approval is automatic on completion of either path — there is no admin review gate before going live.** See Section 36 (Risks) for the trade-off this accepts, and Section 16.2 for the compensating control (Suspend). **Onboarding is deliberately scoped to the merchant profile and public storefront only — it never collects bank/settlement details.** An earlier revision folded bank details into this flow; that's been reverted (Section 30 rule 12, Section 19.2's `payout/details` schema) because onboarding's job is getting a store live and visible, not clearing every piece of business admin at once. Bank details are a Settings-time task, entered whenever the entrepreneur is actually ready to receive a payout.)*
+- **Purpose:** Configure the entrepreneur's entire storefront — business info, catalog, branding, hours, contact, and social links — via either a natural-language conversation or a direct multi-step form.
+- **Fields collected (both paths, same schema — Section 19.2):** Shop Name, Business Category, Tagline, Description, Address (line 1/2, city, state, postal code, country), Google Maps Location, Phone, WhatsApp, Email, Working Hours, Logo, Cover Image, Gallery Images, Products/Services + Pricing, Social Links, Website Link, FAQs, Return Policy, Privacy Policy, Business Highlights / Why Choose Us, Payment Preferences. **No bank/settlement fields anywhere in this flow, on either path.**
+- **Layout & Components:** An initial choice screen ("Talk to our AI" vs. "Fill in the details myself"), then either: (a) the AI Setup Concierge chat interface (message bubbles, typing indicator, inline "confirm profile" card summarizing everything extracted, with edit icons), or (b) a multi-step manual form covering Business Information, Address Information, Contact Information, Business Description, Products, Images, Working Hours, and Social Media. Nothing in either path asks about bank accounts, IFSC/SWIFT codes, or settlement currency — that entire topic doesn't come up until the entrepreneur chooses to visit Settings → Bank Details on their own initiative.
+- **Validation & Business Logic:** All prices validated as positive numbers in a supported currency; profanity/length filters on tagline and description; at least one catalog item or the custom-amount toggle must be enabled before publishing; both paths write to the same Firestore fields, so downstream pages never need to know which path a merchant used. On submission (either path), the merchant document is created with `status: "active"` directly — no intermediate `pending_approval` state, and no bank-details-completion gate either (Section 30, rule 12) — a store can go live and start taking payments with an entirely empty `payout/details` subcollection.
+- **API Calls:** `POST /api/ai/setup-concierge` (AI path) or direct `POST /api/merchants/:id/products` (bulk) + `PATCH /api/merchants/:id` (manual path); both converge on the same merchant-creation logic. Notably absent: any call to `PATCH /api/merchants/:id/payout` — that endpoint is only ever called later, from Settings.
+- **Navigation:** → AI Website Preview (14.2b), not straight to Dashboard — the merchant sees their generated storefront first and explicitly continues from there.
+- **States:** Typing/loading indicator while AI responds (AI path); per-step validation on the manual form; failure state on either path falls back to the manual form's relevant step.
 - **Permissions:** Authenticated entrepreneur only.
-- **Future Improvements:** Voice input for the initial business description.
+- **Future Improvements:** Voice input for the AI path's initial business description; letting a merchant switch from one path to the other mid-flow without losing progress; a gentle, dismissible Dashboard reminder nudging a merchant with no `payout/details` on file yet toward Settings → Bank Details (never a blocking gate).
+
+### 14.2b AI Website Preview
+*(New intermediate step between Onboarding and Dashboard — the merchant's first look at their actual live storefront, not a plain confirmation screen.)*
+- **Purpose:** Show the entrepreneur the fully generated storefront (Section 15.1's Hero, About, Services, Gallery, Reviews, Business Info, Map, Contact — all populated from what they just entered) before they land in the operational dashboard.
+- **Layout & Components:** The live Public Store page (Section 15.1) rendered exactly as a customer would see it, with a persistent "Continue to Dashboard" button and a smaller "Edit Details" link back into Onboarding.
+- **Validation & Business Logic:** This is a read-only preview of already-saved data — the store is already `active` and technically reachable by its real URL at this point (Section 30, rule 1), so this step is a confirmation/orientation moment for the merchant, not a publish gate.
+- **API Calls:** `GET /api/merchants/:slug/public-page` (the same endpoint the real customer-facing page uses — what the merchant sees here is exactly what a customer would see, not a separate mock)
+- **Navigation:** → Dashboard (primary path) or → Onboarding (to edit).
+- **States:** Loading skeleton while the storefront renders.
+- **Permissions:** Authenticated entrepreneur only, own store, shown once automatically right after onboarding (reachable again later from Settings if the merchant wants to re-preview after edits).
+- **Future Improvements:** Inline edit-in-place on this preview instead of a full return trip to Onboarding.
 
 ### 14.3 Dashboard
-*(Merges the former Dashboard and Analytics pages — the AI Earnings Assistant lives here, not on a separate "Analytics" destination.)*
-- **Purpose:** The entrepreneur's home screen — earnings snapshot, recent orders, and the AI Earnings Assistant, all in one place.
-- **Layout & Components:** Summary cards (Today / This Week / This Month earnings), recent-orders list, Open/Closed toggle in the header, and an AI chat box for earnings questions with quick-question chips ("This week", "Best seller", "Repeat customers") plus minimal supporting sparkline visuals.
-- **Validation & Business Logic:** Summary figures always reflect the entrepreneur's local timezone; Open/Closed toggle takes effect immediately platform-wide; all AI-facing figures are computed server-side (Section 10.2) before the AI ever sees them.
-- **API Calls:** `GET /api/merchants/:id/summary`, `PATCH /api/merchants/:id/status`, `POST /api/ai/earnings-assistant`
-- **Navigation:** → Orders, → Products, → Settings (via nav bar).
-- **States:** Skeleton loaders on cards while fetching; empty state ("No sales yet — share your page!") for brand-new stores; typing indicator while the AI composes an earnings answer.
+*(Quick home-screen snapshot only now — the AI Earnings Assistant and deeper charts have moved to their own Analytics page, 14.10, since this final vision lists Analytics as a distinct dashboard section rather than folding it in here.)*
+- **Purpose:** The entrepreneur's home screen — a quick earnings snapshot and recent orders at a glance, with a link into the fuller Analytics page for anything deeper.
+- **Layout & Components:** Summary cards (Today / This Week / This Month earnings), recent-orders list, Open/Closed toggle in the header, a small "Ask about your earnings" prompt that routes into Analytics (14.10) rather than an embedded chat box here.
+- **Validation & Business Logic:** Summary figures always reflect the entrepreneur's local timezone; Open/Closed toggle takes effect immediately platform-wide.
+- **API Calls:** `GET /api/merchants/:id/summary`, `PATCH /api/merchants/:id/status`
+- **Navigation:** → Orders, → Products, → Analytics (for the AI Earnings Assistant), → Settings (via nav bar).
+- **States:** Skeleton loaders on cards while fetching; empty state ("No sales yet — share your page!") for brand-new stores.
 - **Permissions:** Authenticated entrepreneur only, own data.
-- **Future Improvements:** Customizable dashboard widgets; exportable weekly email summary generated by the same AI.
+- **Future Improvements:** Customizable dashboard widgets.
 
 ### 14.4 Orders
-*(Merges the former Orders, Transactions, and Refunds pages as tabs on one page — same underlying data, three views of it.)*
-- **Purpose:** Everything related to what's been sold, paid, and refunded.
-- **Tabs:** **Orders** (fulfillment-focused list) · **Transactions** (raw financial ledger — every payment, refund, and payout event with Surfboard reference IDs) · **Refunds** (searchable order list with full/partial refund actions and refund status history)
-- **Layout & Components:** Filterable/sortable table (date, customer note, amount, status), row-level "Refund" and "Mark Fulfilled" actions on the Orders tab; read-only ledger with export/download on the Transactions tab; refund amount input with remaining-balance validation on the Refunds tab.
+*(Narrower scope than before — Refunds stays here as a tab since a refund is always tied to a specific order; Payments/Transactions is promoted to its own page below, since this final vision lists it as a distinct dashboard section rather than a tab.)*
+- **Purpose:** Track what's been sold and fulfilled, and issue refunds against specific orders.
+- **Tabs:** **Orders** (fulfillment-focused list) · **Refunds** (searchable order list with full/partial refund actions and refund status history)
+- **Layout & Components:** Filterable/sortable table (date, customer note, amount, status), row-level "Refund" and "Mark Fulfilled" actions on the Orders tab; refund amount input with remaining-balance validation on the Refunds tab.
 - **Validation & Business Logic:** Refund action only enabled on `paid` orders; partial refund amount cannot exceed the remaining refundable balance; refunds beyond Surfboard's allowed window are blocked with an explanatory message.
-- **API Calls:** `GET /api/merchants/:id/orders`, `GET /api/merchants/:id/transactions`, `POST /api/payments/:id/refund`, `PATCH /api/orders/:id/fulfil`
-- **Navigation:** → Order detail/receipt view (from any tab).
+- **API Calls:** `GET /api/merchants/:id/orders`, `POST /api/payments/:id/refund`, `PATCH /api/orders/:id/fulfil`
+- **Navigation:** → Order detail/receipt view (from either tab); → Payments (14.5) for the raw transaction ledger.
 - **States:** Loading skeleton rows; empty state for stores with no orders yet; failure state with retry.
 - **Permissions:** Authenticated entrepreneur only, own orders.
 - **Future Improvements:** Bulk actions (fulfil multiple orders at once); CSV/PDF export for accounting; reason-code tagging for refunds.
 
-### 14.5 Products
-*(Merges the former Products, QR & Poster, and Payment Page Preview pages as tabs — all "manage and share my store.")*
-- **Purpose:** Configure the catalog and share the store.
-- **Tabs:** **Catalog** (add/edit/remove items, custom-amount toggle) · **Preview & Share** (live read-only render of the public page, QR code, poster download)
-- **Layout & Components:** Item list with inline edit and "Add Item" modal (name, price, currency, custom-amount toggle, optional product image) on the Catalog tab; read-only public-page preview, "Copy Link" button, QR preview, and "Download Poster" button on the Preview & Share tab.
-- **Validation & Business Logic:** Price must be a positive number; item name required, max 60 characters; at least one item or custom-amount mode must remain enabled; product images compressed client-side (Section 19.2). QR and poster are generated **entirely client-side** (Section 21.8) — no backend call, no Storage cost.
-- **API Calls:** `POST/PATCH/DELETE /api/merchants/:id/products`, `GET /api/merchants/:slug/public-page` (for the preview)
-- **Navigation:** Catalog changes reflect immediately on the Preview & Share tab.
-- **States:** Loading list skeleton; empty state prompts AI Concierge re-entry; failure state on save with inline error.
-- **Permissions:** Authenticated entrepreneur only, own catalog.
-- **Future Improvements:** Multiple photos per item, categories/tags; multiple poster templates/themes.
+### 14.5 Payments
+*(Split out from the former consolidated Orders page — this is the raw financial ledger, distinct from order fulfillment.)*
+- **Purpose:** Every payment, refund, and payout event in one ledger, with Surfboard reference IDs — the financial record, as opposed to Orders' operational/fulfillment view of the same underlying transactions.
+- **Layout & Components:** Read-only ledger table (type, amount, method, timestamp, Surfboard reference ID), export/download button, settlement status per entry (matched against `payout/details.completedAt`, Section 19.2).
+- **Validation & Business Logic:** Read-only; all figures reconciled against Surfboard's transaction records via webhook events (Section 23.4).
+- **API Calls:** `GET /api/merchants/:id/transactions`
+- **Navigation:** → linked Order (14.4) or Receipt for any entry.
+- **States:** Loading, empty ("no transactions yet"), failure with retry.
+- **Permissions:** Authenticated entrepreneur only, own data.
+- **Future Improvements:** CSV/PDF export for accounting purposes.
 
-### 14.6 Customers
+### 14.6 Payment Links
+*(New — a merchant-initiated action distinct from a customer arriving at the storefront on their own. Uses the same underlying order/payment machinery as the Pay Securely modal, Section 15.1, just entered from the merchant's side first.)*
+- **Purpose:** Let the merchant proactively create a shareable payment link for a specific product or a custom amount, rather than waiting for a customer to browse the storefront themselves.
+- **Layout & Components:** "Create Link" form — product dropdown or custom amount, optional customer phone number field, generated link with a "Copy Link" button and a one-tap **"Share via WhatsApp"** button (pre-fills a `wa.me` link with the payment URL, generated client-side).
+- **Validation & Business Logic:** Same amount/currency validation as the Pay Securely modal (Section 15.1); the generated link is exactly the same `/{merchantSlug}?pay={productId}` shared-link format already defined there — this page is a convenience generator for that link, not a separate mechanism.
+- **API Calls:** None required beyond what's already needed to read the merchant's own product list — the link itself is just a URL constructed client-side, no backend "link" entity to create or store.
+- **Navigation:** → Payments (14.5) to see once it's paid.
+- **States:** Copy-confirmation toast; WhatsApp share opens the device's WhatsApp app/web directly.
+- **Permissions:** Authenticated entrepreneur only.
+- **Future Improvements:** Link expiry options; a history list of previously generated links and their paid/unpaid status.
+
+### 14.7 QR Payments
+*(New — same relationship to the Pay Securely modal as Payment Links above, just rendered as a QR code instead of a copyable URL, for in-person use.)*
+- **Purpose:** Generate a QR code for a specific product or custom amount, for a customer to scan and pay in person.
+- **Layout & Components:** Same "Create" form as Payment Links (product or custom amount), large QR preview, "Download QR" button.
+- **Validation & Business Logic:** The QR encodes exactly the same shared-link URL format as Payment Links/Section 15.1; generated **entirely client-side** (`qrcode.react`, Section 21.8) — no backend call, no Storage cost.
+- **API Calls:** None, for the same reason as 14.6.
+- **Navigation:** → Payments (14.5) to see once it's paid.
+- **States:** Brief in-browser render; no failure state beyond a rare canvas-rendering error.
+- **Permissions:** Authenticated entrepreneur only.
+- **Future Improvements:** A permanent "store QR" (encoding the plain storefront, no pre-filled amount) alongside per-transaction QR codes, for a printed counter sticker.
+
+### 14.8 Products
+*(Catalog management only now — QR/poster/link generation has moved to its own pages, 14.6–14.7, since this final vision treats them as distinct dashboard sections.)*
+- **Purpose:** Configure the catalog shown on the storefront.
+- **Layout & Components:** Item list with inline edit, "Add Item" modal (name, price, currency, custom-amount toggle, optional product image).
+- **Validation & Business Logic:** Price must be a positive number; item name required, max 60 characters; at least one item or custom-amount mode must remain enabled; product images compressed client-side (Section 19.2).
+- **API Calls:** `POST/PATCH/DELETE /api/merchants/:id/products`
+- **Navigation:** Catalog changes reflect immediately on the Public Store page (15.1) and are available to select from in Payment Links (14.6) and QR Payments (14.7).
+- **States:** Loading list skeleton; empty state prompts re-entry into Onboarding's AI path for catalog help; failure state on save with inline error.
+- **Permissions:** Authenticated entrepreneur only, own catalog.
+- **Future Improvements:** Multiple photos per item, categories/tags.
+
+### 14.9 Customers
 - **Purpose:** Lightweight view of repeat customers (by phone/email hash, not full discovery/CRM).
 - **Layout & Components:** List of customers with order count and total spent — no full contact management, by design (Section 19.5, Privacy).
 - **Validation & Business Logic:** Only customers who've transacted at least twice are surfaced as "repeat"; single-purchase customers are not individually tracked in this view.
@@ -743,71 +817,131 @@ Every page below uses the same template so a developer or AI assistant can build
 - **Permissions:** Authenticated entrepreneur only, own data.
 - **Future Improvements:** Optional customer notes field for the entrepreneur's own reference.
 
-### 14.7 Settings
-*(Merges the former Settings, Profile, and Notifications pages as tabs — all "manage my own account.")*
-- **Purpose:** Everything about the entrepreneur's own account, identity, and preferences in one place.
-- **Tabs:** **Profile & Business** (photo, logo, business name, category, tagline) · **Payout & Language** (bank details, language toggle) · **Notifications** (in-app notification history and channel preferences)
-- **Layout & Components:** Profile/logo upload with client-side compression (Section 19.2) and business fields on the Profile & Business tab; bank account fields and language selector on the Payout & Language tab; reverse-chronological notification list with read/unread indicators on the Notifications tab.
-- **Validation & Business Logic:** Business name required, max 80 characters; bank account details validated against the format expected by the entrepreneur's country; notifications older than 90 days are archived, not deleted.
-- **API Calls:** `PATCH /api/merchants/:id/profile`, `PATCH /api/merchants/:id/settings`, `GET /api/merchants/:id/notifications`, `PATCH /api/notifications/:id/read`
+### 14.10 Analytics
+*(Split back out from Dashboard as its own page, since this final vision lists it as a distinct dashboard section. Dashboard, 14.3, keeps a quick earnings snapshot; this page is where the full AI Earnings Assistant conversation and deeper charts live.)*
+- **Purpose:** Deeper earnings and sales insight, primarily surfaced through the AI Earnings Assistant, with supporting charts for entrepreneurs who want to look at the numbers directly.
+- **Layout & Components:** AI chat box (primary interface) with quick-question chips ("This week", "Best seller", "Repeat customers"), Recharts line/bar visuals for revenue over time and top products.
+- **Validation & Business Logic:** All figures computed server-side (Section 10.2) before being shown to the AI or the user — the AI never performs arithmetic itself.
+- **API Calls:** `POST /api/ai/earnings-assistant`
+- **Navigation:** → Orders (drill down from any answer referencing specific orders).
+- **States:** Typing indicator while AI composes an answer; empty state for stores with no transaction history yet; failure state with a plain "try again" message.
+- **Permissions:** Authenticated entrepreneur only, own data.
+- **Future Improvements:** Exportable weekly email summary generated by the same AI.
+
+### 14.11 Reviews
+*(New — surfaces what customers have submitted via the post-payment review prompt, Section 15.3.)*
+- **Purpose:** Let the entrepreneur see and track the star ratings and written reviews customers have left, which also populate the storefront's Customer Reviews section (15.1).
+- **Layout & Components:** List of reviews (stars, comment, order reference, date), aggregate rating summary matching `merchants.ratingAverage`/`ratingCount` (Section 19.2).
+- **Validation & Business Logic:** Read-only — reviews cannot be edited or deleted by the merchant (Section 30, rule 5, unchanged: ratings are never used for cross-platform discovery, only shown on the merchant's own page).
+- **API Calls:** `GET /api/merchants/:id/reviews`
+- **Navigation:** → linked Order (14.4).
+- **States:** Loading skeleton; empty state ("No reviews yet"); failure with retry.
+- **Permissions:** Authenticated entrepreneur only, own data.
+- **Future Improvements:** A reply/thank-you note visible back to the customer (already noted as a future improvement on the Receipt page, Section 15.3 — same feature, two entry points).
+
+### 14.12 Settings
+*(Merges the former Settings and Notifications pages as tabs — "manage my own account and payout," distinct from Profile (14.14), which owns the storefront identity fields. Bank Details is its own tab specifically because it writes to the separately-secured `payout/details` subcollection, Section 19.2 — not because it's visually different from the rest. Since bank details are deliberately excluded from onboarding (Section 14.2), this tab is where they're entered for the very first time, whenever the entrepreneur is ready — not a pre-filled edit screen.)*
+- **Purpose:** Everything about the entrepreneur's payout setup and account-level preferences in one place — storefront/business content lives on the separate Profile page (14.14).
+- **Tabs:** **Bank Details** (bank name, account holder, account number, IFSC/SWIFT, branch, account type, UPI ID, settlement currency — entered here for the first time; empty until the entrepreneur fills it in, with no onboarding gate ever blocking on it) · **Language** (language toggle) · **Notifications** (in-app notification history and channel preferences)
+- **Layout & Components:** Bank fields on the Bank Details tab, starting empty for a newly onboarded merchant, with a clear "not yet set up" empty state distinct from a validation error; reverse-chronological notification list with read/unread indicators on the Notifications tab.
+- **Validation & Business Logic:** Bank account details validated against the format expected by the entrepreneur's country; notifications older than 90 days are archived, not deleted; a store can keep operating and taking payments indefinitely with this tab never touched — it is never a blocking requirement.
+- **API Calls:** `PATCH /api/merchants/:id/payout`, `PATCH /api/merchants/:id/settings`, `GET /api/merchants/:id/notifications`, `PATCH /api/notifications/:id/read`
 - **Navigation:** Accessible from the main nav on every entrepreneur page.
 - **States:** Per-tab save confirmation toast; upload progress indicator; failure state with field-level error highlighting.
-- **Permissions:** Authenticated entrepreneur only, own account.
-- **Future Improvements:** Two-factor authentication toggle; push notification preference granularity per event type; multiple team-member profile support (Phase 2).
+- **Permissions:** Authenticated entrepreneur only, own account. The Bank Details tab's underlying data additionally carries stricter Firestore Security Rules (Section 19.2) than the rest of this page.
+- **Future Improvements:** Two-factor authentication toggle; push notification preference granularity per event type; multiple team-member profile support (Phase 2); a gentle Dashboard nudge toward this tab for a merchant who's been active for a while with no payout details on file (never a gate, per Section 30 rule 12).
 
-### 14.8 Help
+### 14.14 Profile
+*(New — split out of the former combined Settings page so storefront/business-identity editing has its own home, distinct from account-level Settings. This is where a merchant edits everything about how their business presents itself, post-onboarding.)*
+- **Purpose:** Let the entrepreneur edit their storefront's business identity and content at any time after onboarding — the same fields onboarding first collected, now editable directly, without re-running the onboarding flow.
+- **Layout & Components:** Grouped fields matching the `merchants` schema (Section 19.2): photo, logo, cover banner, business name, owner name, category, tagline, an About card (description), a Contact & Location card (email, phone, WhatsApp, address, Google Maps link), structured per-day business hours, theme colors, social links (website/Instagram/Facebook — WhatsApp lives only in Contact & Location, not duplicated here), plus a drag-to-reorder gallery grid (writing to the `gallery` subcollection, not an array field). Client-side image compression (Section 19.2, 21.8) for photo/logo/cover banner and every gallery upload. A "Preview Storefront" action links out to the real public store page (`/pay/:slug`) in a new tab — the exact live page a customer would see, rather than a separate embedded preview component. **Not yet implemented on this page:** why-choose-us bullets and time zone (see Section 19.2's schema table notes on both).
+- **Validation & Business Logic:** Business name required, max 80 characters; same profanity/length filters on tagline/description as onboarding; changes save directly to the live merchant document and are reflected on the public storefront (15.1) immediately — there is no draft/publish distinction, editing here is editing the real live page.
+- **API Calls:** `PATCH /api/merchants/:id` (the same general-purpose merchant PATCH onboarding's manual path also uses, not a dedicated `/profile` sub-route), `POST/DELETE /api/merchants/:id/gallery`
+- **Navigation:** Accessible from the main nav on every entrepreneur page; also reachable from the AI Website Preview's "Edit Details" link (14.2b) right after onboarding.
+- **States:** Save confirmation toast; upload progress indicator; failure state with field-level error highlighting; loading skeleton while existing values load.
+- **Permissions:** Authenticated entrepreneur only, own storefront.
+- **Future Improvements:** Why-choose-us bullets and time zone (schema-documented, not yet built here); inline edit-in-place directly on the storefront preview instead of a separate form.
+
+### 14.13 Help
 - **Purpose:** Self-serve support — FAQs, contact options, and basic troubleshooting.
 - **Layout & Components:** Searchable FAQ accordion, "Contact Support" button, status page link.
 - **Validation & Business Logic:** None (static/informational content, occasionally augmented by the AI chat for common questions).
 - **API Calls:** `GET /api/help/articles`
 - **Navigation:** Accessible from main nav on every entrepreneur page.
 - **States:** Loading skeleton for articles; empty/search-no-results state.
-- **Permissions:** Authenticated entrepreneur (a public-facing Support page also exists for customers — Section 15.4).
+- **Permissions:** Authenticated entrepreneur (a public-facing Support page also exists for customers — Section 15.3).
 - **Future Improvements:** In-context help tooltips throughout the rest of the product.
 
-> **Persistent UI elements, not pages:** the **AI chat floating action button** (available on every Entrepreneur screen, routing to the AI Setup Concierge or Dashboard's earnings AI depending on store lifecycle stage) and the **notification bell** (a shortcut into the Settings → Notifications tab) are documented as components in Section 17.7, not as separate pages — this is exactly the over-counting the 36-page draft made.
+> **Persistent UI elements, not pages:** the **AI chat floating action button** (available on every Entrepreneur screen, routing to Onboarding's AI path or the Analytics page's earnings AI depending on store lifecycle stage) and the **notification bell** (a shortcut into the Settings → Notifications tab) are documented as components in Section 17.7, not as separate pages.
 
 ---
 
-## 15. Customer Pages (4)
+## 15. Customer Pages (3)
 
 ### 15.1 Public Store
-*(Merges the former Landing Page, Public Store, and item/amount-selection screens — all pre-checkout browsing on one page.)*
-- **Purpose:** The branded page a specific entrepreneur shares — the entry point for nearly all customer traffic. A generic PayLink landing (for the rare visitor who arrives without a specific link) is simply this same page's empty/no-slug state, not a separate destination.
-- **Layout & Components:** Business photo, name, tagline, catalog item grid or custom-amount field with quantity stepper, Open/Closed banner if the store is currently closed.
-- **Validation & Business Logic:** If store status is `Closed`, checkout is disabled and a "not currently taking orders" message is shown instead; custom amount must be within the entrepreneur's configured min/max bounds if set.
-- **API Calls:** `GET /api/merchants/:slug/public-page`
-- **Navigation:** → Checkout.
-- **States:** Loading skeleton; closed-state banner; failure state (invalid/removed link) shown as a friendly 404-style message.
+*(Replaces the earlier minimal photo+tagline+catalog design with a full storefront, matching the approved wireframe. Checkout is no longer a separate page — it's the "Pay Securely" modal below, which opens on top of this page rather than navigating away from it.)*
+- **Purpose:** The branded page a specific entrepreneur shares — the entry point for nearly all customer traffic, and now a complete small-business storefront in its own right, not just a catalog list. A generic PayLink landing (for the rare visitor who arrives without a specific link) is simply this same page's empty/no-slug state, not a separate destination.
+- **Layout & Components, top to bottom:**
+  1. **Header** — logo, shop name, Verified badge, Share button
+  2. **Hero** — cover banner image, business name, tagline, category, star rating, location, WhatsApp button, Call button
+  3. **About Us** — Business Description card, "Why Choose Us" bullet-list card
+  4. **Services** — grid of cards, each with image, name, price, short description, and its **own Pay button** (opens the Pay Securely modal pre-filled with that specific product — this is single-item checkout per product, consistent with the existing no-cart MVP scope, not a new multi-item feature)
+  5. **Gallery** — image grid (compressed base64 images, Section 19.2)
+  6. **Customer Reviews** — star rating + comment cards, sourced from the `rating` field already stored per order (Section 19.2) — no new data model needed
+  7. **Business Information** — working hours, phone, WhatsApp, email, address
+  8. **Map** — embedded map from the stored address (a static placeholder is acceptable for MVP if a maps API isn't wired up)
+  9. **Footer** — Privacy Policy, Terms links, "Powered by PayLink," Secure Payments badge
+- **Validation & Business Logic:** If store status is `closed`, every Pay button is disabled and a "not currently taking orders" message replaces them; if store status is `suspended` (Section 16.2), the entire page shows a "not currently available" state instead of the storefront — checkout must be disabled immediately, not just visually de-emphasized. Custom amount (if enabled) must be within the entrepreneur's configured min/max bounds.
+- **API Calls:** `GET /api/merchants/:slug/public-page` (now returns the full storefront payload — about-us text, services, gallery, hours, contact, social links, in addition to the original catalog fields)
+- **Navigation:** Opens the Pay Securely modal (below) on top of itself — does not navigate to a separate page.
+- **States:** Loading skeleton; closed-state and suspended-state banners; failure state (invalid/removed link) shown as a friendly 404-style message.
 - **Permissions:** Fully public, no login required.
 - **Future Improvements:** Store-level announcement banner (e.g., "Taking orders for Friday only"); multi-item cart support (currently single-item-or-amount per transaction).
 
-### 15.2 Checkout
-*(Includes the former Failed Payment screen as an in-page error state, not a separate destination.)*
-- **Purpose:** Collect note, tip, and payment method, submit payment, and handle failure without leaving the flow.
-- **Layout & Components:** Order summary card, note text field, tip selector (preset % + custom), payment method tabs (Card / Swish / Wallet), "Pay Now" button. On failure: failure icon, plain-language reason, "Try Again" action, alternate payment method suggestion — shown in place, not as a redirect.
-- **Validation & Business Logic:** Note capped at 200 characters; tip must be zero or positive; payment method must be one the entrepreneur has enabled; failures are distinguished between customer-fixable (declined card — offer retry) and system-level (provider unavailable — "try again shortly").
-- **API Calls:** `POST /api/orders`, `POST /api/payments/create`
-- **Navigation:** → Receipt on success; stays on Checkout (with the failure state shown) on failure; → Public Store if the customer abandons.
+#### Pay Securely Modal
+*(Not a page — an overlay component that lives on top of Public Store. Documented here since it fully replaces the former separate Checkout page, including the former Failed Payment state.)*
+- **Purpose:** Collect payment details for one specific product or custom amount, without navigating the customer away from the storefront.
+- **Fields:** Merchant Name (read-only, pre-filled) · Product (dropdown — pre-selected if opened from a specific service's Pay button, otherwise defaults to the custom-amount option if enabled) · Amount (auto-filled from the selected product's price; editable only in custom-amount mode) · Customer Name (text input) · Customer Phone Number (a **separate field from Customer Name** — an earlier wireframe draft mislabeled these as one field, corrected here) · Notes (optional, max 200 characters) · **Pay Now** button · **Scan QR Instead** button (secondary — shows a client-side-generated QR encoding the same pre-filled amount/product, Section 21.8, for an in-person customer to pay from their own phone) · footer trust badge ("Powered by PayLink," Secure Payment)
+- **Validation & Business Logic:** Note capped at 200 characters; payment method must be one the entrepreneur has enabled; failures are distinguished between customer-fixable (declined card — offer retry in place) and system-level (provider unavailable — "try again shortly"), both shown inline within the modal, never as a separate page.
+- **API Calls:** `POST /api/orders`, `POST /api/payments/create` — which redirects to Surfboard's hosted Payment Page (Section 23) to complete the actual card entry, then returns the customer to this flow on completion.
+- **Navigation:** On success → Receipt (15.2). On failure → stays open with the inline failure state. On dismiss → closes, returning to the plain Public Store page underneath.
 - **States:** Loading spinner on "Pay Now" during processing; disabled state if required fields are incomplete; inline failure state as described above.
 - **Permissions:** Fully public.
 - **Future Improvements:** Saved payment method for returning customers of the same entrepreneur (with explicit consent); automatic alternate-method suggestion based on the specific decline reason code.
 
-### 15.3 Receipt
-*(Merges the former Success and Receipt & Bill screens, with Rating folded in as an optional prompt on the same page rather than a fourth destination.)*
-- **Purpose:** Confirm the payment succeeded, provide the downloadable PDF bill, and optionally collect a rating — one continuous moment, not three separate pages.
-- **Layout & Components:** Brief success checkmark animation on arrival, then order details (item/amount, tip, note), entrepreneur name, timestamp, "Download Bill (PDF)" button, and an optional 1–5 star rating prompt with a "Skip" option.
-- **Validation & Business Logic:** The receipt reference and PDF bill are generated exactly once per successful payment and are immutable thereafter (a refund generates a separate linked document, not an edit to the original); one rating per order, visible only on that entrepreneur's own page, never used for cross-platform discovery.
-- **API Calls:** `GET /api/orders/:id/receipt`, `GET /api/orders/:id/bill-pdf` (client-side PDF generation, Section 21.8), `POST /api/orders/:id/rating`
-- **Navigation:** Closes back to Public Store, or the customer simply leaves.
-- **States:** Brief success-animation transition on load; loading briefly while the receipt/PDF renders; failure state with a "contact support" link if generation fails; rating submission confirmation toast.
-- **Permissions:** Accessible via the unique order link (no login required, but not discoverable/guessable).
-- **Future Improvements:** Emailed/SMS copy of the PDF bill sent automatically; entrepreneur reply/thank-you note visible back to the customer.
+#### Shared Payment Link Behavior
+- URL pattern: `/{merchantSlug}?pay={productId}` or `/{merchantSlug}?pay=custom&amount={value}`
+- **With a `pay` param:** the storefront renders normally in the background, and the Pay Securely modal auto-opens on load, pre-filled per the param — this is the "focused on payment, storefront as background" behavior a merchant's shared payment link is meant to produce.
+- **Without a `pay` param:** the storefront loads normally in browsing mode, no modal open — what a customer sees visiting the shop link directly rather than a specific payment link.
+- After a successful payment, the customer returns to the plain storefront (modal closed, no `pay` param) so they can browse Services, Gallery, and Reviews rather than being stranded on a receipt with nowhere else to go.
 
-### 15.4 Support
+### 15.2 Receipt
+*(Redesigned into two distinct visual moments on one page — a Success Card first, replaced by the full Receipt/invoice — with Rating folded in as an optional prompt afterward, rather than a separate destination.)*
+- **Purpose:** Confirm the payment succeeded with a proper Success moment, then provide a genuinely professional invoice-style receipt and PDF, then optionally collect a rating — one continuous flow, not several separate pages, and never an abrupt redirect away from the experience.
+- **Layout & Components — Success Card (shown first, on arrival):** ✅ success icon/animation, "Payment Successful," Merchant Name, Amount Paid, Transaction ID, Date, and four actions: **Download Receipt**, **Share Receipt**, **View Order**, **Continue Browsing** (the last of which returns to the plain Public Store page per Section 15.1's shared-link behavior — the customer is never forced to leave). The customer is **not** automatically redirected away from this moment; they choose when to move on.
+- **Layout & Components — Full Receipt/Invoice (reached via "View Order" or "Download Receipt"):** styled as a real invoice, not a bare confirmation — Merchant Logo, Merchant Name, Merchant Address, Merchant Contact Information, PayLink branding, Surfboard payment reference, Transaction ID, Order ID, Customer Name, itemized Products Purchased with Quantity and Unit Price, Tax (if applicable), Total, Currency, Payment Method, Date, a small QR code for independent verification of the transaction, and a footer with support information.
+- **Validation & Business Logic:** The receipt reference and PDF are generated exactly once per successful payment and are immutable thereafter (a refund generates a separate linked document, not an edit to the original); the invoice's line items are pulled directly from the order's stored `items` array (Section 19.2) so the PDF can never drift from what was actually charged.
+- **API Calls:** `GET /api/orders/:id/receipt`, `GET /api/orders/:id/bill-pdf` (client-side PDF generation, styled as the invoice above, Section 21.8), `POST /api/orders/:id/rating`
+- **Navigation:** Success Card → Full Receipt (View Order) or → back to Public Store (Continue Browsing); Full Receipt → back to Public Store.
+- **States:** Success-animation transition on arrival; loading briefly while the receipt/PDF renders; failure state with a "contact support" link if generation fails; rating submission confirmation toast.
+- **Permissions:** Accessible via the unique order link (no login required, but not discoverable/guessable).
+- **Future Improvements:** Emailed copy of the PDF receipt sent automatically; entrepreneur reply/thank-you note visible back to the customer.
+
+#### Post-Payment Review Prompt
+*(Shown after the Success Card/Receipt moment, not blocking either of them.)*
+- **Purpose:** Collect a star rating and written review, and reflect it on the merchant's storefront immediately.
+- **Layout & Components:** 1–5 star selector, optional written review text field, "Submit" and "Skip" actions.
+- **Validation & Business Logic:** One rating per order (Section 30, rule 5); on submission, `merchants.ratingAverage`/`ratingCount` (Section 19.2) are recalculated in the same transaction as the write, so the storefront's Customer Reviews section (15.1) and the entrepreneur's Reviews page (14.11) both reflect it immediately — not on the next scheduled refresh.
+- **API Calls:** `POST /api/orders/:id/rating`
+- **Navigation:** Dismisses back into the Receipt flow above.
+- **States:** Submission confirmation toast; skip requires no confirmation.
+- **Permissions:** Same unique-order-link access as the rest of this page.
+- **Future Improvements:** See Section 15.2's future improvements above (merchant reply/thank-you note) — same feature, referenced from both places.
+
+### 15.3 Support
 - **Purpose:** Customer-facing help for payment issues.
 - **Layout & Components:** Short FAQ ("Is my payment secure?", "I was charged incorrectly"), "Contact PayLink Support" option.
-- **Validation & Business Logic:** None — informational, with an escalation path into the Admin Disputes tab (Section 16.4) if a customer submits a complaint.
+- **Validation & Business Logic:** None — informational, with an escalation path into the Admin Refunds & Disputes page's Disputes tab (Section 16.4) if a customer submits a complaint.
 - **API Calls:** `POST /api/disputes` (if a customer files a complaint)
 - **Navigation:** Accessible from the footer of every customer-facing page.
 - **States:** Standard form submission loading/success/failure states.
@@ -816,11 +950,22 @@ Every page below uses the same template so a developer or AI assistant can build
 
 ---
 
-## 16. Admin Pages (6)
+## 16. Admin Pages (7)
+
+### 16.0 Admin Login
+*(New — separate entirely from the Entrepreneur Auth page. No registration screen exists or should ever be built for this role, per Section 24.4.)*
+- **Purpose:** The only way into the Admin side of the product.
+- **Layout & Components:** Two fields — Access Code, Password — and a single "Log In" button. No "Sign up," "Forgot password," or "Continue with Google" affordance of any kind.
+- **Validation & Business Logic:** Checked directly against the backend's configured admin credential (Section 24.4) — hardcoded dev values in this phase, flagged explicitly as needing replacement before any real deployment. Failed attempts are rate-limited (Section 22.1) given there's no account-lockout/reset flow to fall back on.
+- **API Calls:** `POST /api/auth/admin-login`
+- **Navigation:** → Admin Dashboard (16.1) on success.
+- **States:** Loading spinner during the check; inline error on invalid credentials, deliberately generic ("Invalid access code or password") rather than confirming which field was wrong.
+- **Permissions:** Fully public (this page *is* the gate — no prior authentication needed to reach it, reaching past it is the whole point).
+- **Future Improvements:** Replace with a real credential/IAM system before production (Section 24.4) — this page's fields may stay the same, but what they're checked against must change.
 
 ### 16.1 Dashboard
 - **Purpose:** Platform-wide health snapshot for the operations team.
-- **Layout & Components:** Summary cards (total active merchants, total volume, pending approvals, open disputes), trend chart (volume over time).
+- **Layout & Components:** Summary cards (total active merchants, total volume, newly onboarded this week, open disputes), trend chart (volume over time).
 - **Validation & Business Logic:** All figures aggregate across every sub-merchant in real time via collection group queries (Section 19.4).
 - **API Calls:** `GET /api/admin/summary`
 - **Navigation:** → Merchant Management, → Reports & Analytics, → Refunds & Disputes.
@@ -829,14 +974,15 @@ Every page below uses the same template so a developer or AI assistant can build
 - **Future Improvements:** Configurable alert thresholds (e.g., notify if refund rate spikes platform-wide).
 
 ### 16.2 Merchant Management
-- **Purpose:** Approve, reject, suspend, or reactivate sub-merchant accounts.
-- **Layout & Components:** Filterable merchant table (status, signup date, category), approval queue tab, per-merchant detail drawer.
-- **Validation & Business Logic:** Rejection requires a reason (shown to the entrepreneur); suspension requires an internal note (admin-only).
-- **API Calls:** `GET /api/admin/merchants`, `POST /api/admin/merchants/:id/approve`, `POST /api/admin/merchants/:id/reject`, `POST /api/admin/merchants/:id/suspend`
+*(Role changed from pre-launch gatekeeper to post-launch monitoring, since Business Rule 1 removed the admin approval gate — stores go live automatically on completing onboarding. Suspend is now the primary and only lever admin has to stop a bad-actor store, so it must be fast and immediate, not a queued/delayed action.)*
+- **Purpose:** Monitor all live sub-merchant accounts, flag suspicious activity, and suspend or reactivate accounts as needed.
+- **Layout & Components:** Filterable merchant table (status, signup date, category, recent activity), a "Recently Onboarded" view for spot-checking new stores shortly after they've gone live, per-merchant detail drawer with a prominent Suspend/Reactivate action.
+- **Validation & Business Logic:** Suspension requires an internal note (admin-only, not shown to the entrepreneur) and takes effect immediately (Section 30, rule 7) — there is no queued or delayed suspension state.
+- **API Calls:** `GET /api/admin/merchants`, `POST /api/admin/merchants/:id/suspend`, `POST /api/admin/merchants/:id/reactivate`
 - **Navigation:** → Merchant detail drawer, → that merchant's Orders/Transactions (read-only, admin view).
-- **States:** Loading table skeleton; empty state ("No pending approvals"); failure with retry.
+- **States:** Loading table skeleton; empty state ("No merchants yet"); failure with retry.
 - **Permissions:** Admin role only.
-- **Future Improvements:** Bulk approval for low-risk categories.
+- **Future Improvements:** Automated flagging of newly onboarded stores with suspicious patterns (e.g., implausible pricing, flagged keywords in the business description) to surface them in the "Recently Onboarded" view before a human would otherwise notice.
 
 ### 16.3 Reports & Analytics
 *(Merges the former Reports and Analytics pages — same underlying data, different depth, not two destinations.)*
@@ -865,21 +1011,21 @@ Every page below uses the same template so a developer or AI assistant can build
 *(Merges the former Logs and Monitoring pages — both "system health," not two destinations.)*
 - **Purpose:** Full audit trail of admin actions, plus real-time technical health of the platform.
 - **Tabs:** **Logs** (searchable/filterable append-only audit table — admin ID, action type, target entity, timestamp) · **Monitoring** (live-updating metric tiles for API latency, payment success rate, AI response times, error rates, per Section 8's Non-Functional Requirements)
-- **Validation & Business Logic:** Logs are append-only — can never be edited or deleted, even by a senior admin, enforced by a Firestore Security Rule (Section 19.3). Monitoring is read-only.
+- **Validation & Business Logic:** Logs are append-only — can never be edited or deleted, even by admin, enforced by a Firestore Security Rule (Section 19.3). Monitoring is read-only.
 - **API Calls:** `GET /api/admin/logs`, `GET /api/admin/monitoring`
 - **Navigation:** → The specific merchant/order/dispute referenced by a given log entry.
 - **States:** Loading, empty (unlikely in practice for Logs), degraded-data warning on Monitoring if a metrics source is stale, failure with retry.
-- **Permissions:** Admin role only (viewing other admins' log entries may require a senior-admin permission level, depending on final role design).
+- **Permissions:** Admin role only. (There is only one admin role in this revision — see Section 24.6.)
 - **Future Improvements:** Exportable compliance-ready audit reports; in-app incident timeline with automatic postmortem note-taking.
 
 ### 16.6 Settings (Admin/Platform)
-- **Purpose:** Platform-level configuration: supported currencies, approval-queue rules, fee/margin configuration, feature flags.
+- **Purpose:** Platform-level configuration: supported currencies, suspension/monitoring rules, fee/margin configuration, feature flags.
 - **Layout & Components:** Grouped configuration sections, each with its own save action and a secondary confirmation dialog for high-impact changes (e.g., changing platform fee percentage).
 - **Validation & Business Logic:** High-impact changes require a secondary confirmation step and are logged with extra detail in the audit trail (Section 16.5).
 - **API Calls:** `GET/PATCH /api/admin/platform-settings`
 - **Navigation:** Standalone.
 - **States:** Save confirmation toast; failure state with field-level error.
-- **Permissions:** Restricted to a senior-admin role, distinct from general Admin.
+- **Permissions:** Admin role (Section 24.4's Access Code + Password login).
 - **Future Improvements:** Staged/scheduled configuration rollouts (e.g., "apply new fee structure starting next month").
 
 ---
@@ -974,9 +1120,9 @@ Each library owns a distinct category of motion. This division exists specifical
 
 **Modern data tables** (Orders, Transactions, Admin Merchant Management, Logs) — Structure: sticky header row, row hover highlight, right-aligned monetary columns in tabular numerals. Behavior: virtualized rendering for tables that can exceed ~100 rows (Transactions, Admin Logs) so performance doesn't degrade with account age. Mobile: collapses to stacked card rows below a defined breakpoint, per Section 17's earlier mobile guidance.
 
-**Animated QR code section** — Purpose: the entrepreneur's shareable QR (Section 14.5, Preview & Share tab). Motion: QR renders with a brief draw-in effect (Framer Motion `pathLength` animation on the QR's SVG modules, or a simple reveal-mask if the QR is rendered as an image) the first time it's generated — not replayed on every visit, only on creation/regeneration. Includes a one-tap "Download poster" action with a satisfying button-press micro-interaction.
+**Animated QR code section** — Purpose: the entrepreneur's shareable QR (Section 14.7, QR Payments page). Motion: QR renders with a brief draw-in effect (Framer Motion `pathLength` animation on the QR's SVG modules, or a simple reveal-mask if the QR is rendered as an image) the first time it's generated — not replayed on every visit, only on creation/regeneration. Includes a one-tap "Download QR" action with a satisfying button-press micro-interaction.
 
-**Floating Action Button (FAB)** — Purpose: quick access to the AI assistant from anywhere in the Entrepreneur app, routing to the AI Setup Concierge (14.2) or the Dashboard's earnings AI (14.3) depending on store lifecycle stage — a persistent element, not a page of its own (Section 14's note on persistent UI elements). Structure: fixed-position circular button, Primary fill, Lucide chat icon. Motion: gentle idle float (subtle translateY loop, ≤4px, very slow) to draw the eye without being distracting; expands into the chat panel with a shared-layout transition rather than a hard cut. Accessibility: `aria-label="Open AI assistant"`, and the idle float pauses entirely under reduced motion.
+**Floating Action Button (FAB)** — Purpose: quick access to the AI assistant from anywhere in the Entrepreneur app, routing to the AI path within Onboarding (14.2) or the Dashboard's earnings AI (14.3) depending on store lifecycle stage — a persistent element, not a page of its own (Section 14's note on persistent UI elements). Structure: fixed-position circular button, Primary fill, Lucide chat icon. Motion: gentle idle float (subtle translateY loop, ≤4px, very slow) to draw the eye without being distracting; expands into the chat panel with a shared-layout transition rather than a hard cut. Accessibility: `aria-label="Open AI assistant"`, and the idle float pauses entirely under reduced motion.
 
 **Premium sidebar (collapsible)** — Structure: icon + label nav items, active-state indicated by a Primary-tinted background and left accent bar, collapse toggle at the bottom. Motion: collapse/expand animates width and label opacity together (Framer Motion `layout` animation), icons stay fixed in place so the collapse never feels like a jump cut. Persists collapsed/expanded state per user.
 
@@ -988,13 +1134,13 @@ Each library owns a distinct category of motion. This division exists specifical
 
 **Empty states with illustrations** — Structure: centered Lottie illustration (Section 17.5) + short reassuring copy + a clear next action ("Share your page to get your first sale"). Used for: no orders yet, no repeat customers yet, no notifications, no disputes (Admin). Deliberately warm rather than clinical — this is often a brand-new user's very first impression of the product.
 
-**Multi-step onboarding wizard** — Structure: progress indicator (dots or a thin bar, not a percentage number that can feel arbitrary), one focused question/step at a time, back/next navigation. Motion: horizontal slide transition between steps (Framer Motion `AnimatePresence` with directional variants), each step's Lottie illustration changes to match context. This wraps around the AI Setup Concierge conversation (Section 14.2) rather than replacing it — the wizard shell provides progress/orientation, the AI chat provides the actual input.
+**Multi-step onboarding wizard** — Structure: progress indicator (dots or a thin bar, not a percentage number that can feel arbitrary), one focused question/step at a time, back/next navigation. Motion: horizontal slide transition between steps (Framer Motion `AnimatePresence` with directional variants), each step's Lottie illustration changes to match context. This wraps around **both** paths of the Onboarding page (Section 14.2) — the AI conversation or the manual multi-step form — providing progress/orientation around whichever input method the entrepreneur chose.
 
 **Search with filters** — Structure: search input with debounced query, filter chips below (status, date range, category) that can be combined. Motion: filtered results cross-fade rather than hard-refresh, so the list doesn't visually "flash." Used on Orders, Transactions, and Admin Merchant Management.
 
 **Profile dropdown** — Structure: avatar/initials trigger, dropdown with account info, Settings/Profile/Help links, sign-out. Motion: fast scale+fade (17.7's glass panel treatment at smaller scale). Keyboard: fully arrow-key navigable, closes on `Esc` or outside click.
 
-**Notification center** — Structure: bell icon with an unread-count badge, dropdown panel listing recent notifications (mirrors the Settings page's Notifications tab, Section 14.7, in miniature). Motion: badge count animates with a small scale-pulse when a new notification arrives (not a distracting bounce). Accessibility: unread count is also announced to assistive tech via an `aria-live` region, not conveyed by color/badge alone.
+**Notification center** — Structure: bell icon with an unread-count badge, dropdown panel listing recent notifications (mirrors the Settings page's Notifications tab, Section 14.12, in miniature). Motion: badge count animates with a small scale-pulse when a new notification arrives (not a distracting bounce). Accessibility: unread count is also announced to assistive tech via an `aria-live` region, not conveyed by color/badge alone.
 
 ### 17.8 Icons
 Lucide icons exclusively, 1.5–2px stroke weight, used at 16px (inline/dense UI), 20px (default), or 24px (primary navigation/empty states) — no mixing icon sets, which is one of the fastest ways a UI stops feeling like one coherent product.
@@ -1022,26 +1168,37 @@ shadcn/ui provides the accessible primitive layer (Button, Dialog, Dropdown Menu
 
 ```mermaid
 flowchart LR
-    subgraph Entrepreneur [Entrepreneur - 8 pages]
-        Auth --> AISetup[AI Setup Concierge]
-        AISetup --> PendingApproval
-        PendingApproval --> Dashboard
-        Dashboard --> Orders["Orders (+ Transactions, Refunds tabs)"]
-        Dashboard --> Products["Products (Catalog + Preview & Share tabs)"]
+    Landing["Landing Page (choose role)"] --> Auth
+    Landing --> AdminLogin["Admin Login (16.0)"]
+
+    subgraph Entrepreneur [Entrepreneur - 14 pages]
+        Auth --> Onboarding["Onboarding (AI or Manual — profile + storefront only, no bank details)"]
+        Onboarding --> WebsitePreview["AI Website Preview (14.2b)"]
+        WebsitePreview --> Dashboard
+        Dashboard --> Orders["Orders (+ Refunds tab)"]
+        Dashboard --> Payments
+        Dashboard --> PaymentLinks["Payment Links"]
+        Dashboard --> QRPayments["QR Payments"]
+        Dashboard --> Products
         Dashboard --> Customers
-        Dashboard --> Settings["Settings (+ Profile, Notifications tabs)"]
+        Dashboard --> Analytics
+        Dashboard --> Reviews
+        Dashboard --> Profile["Profile (14.14 — storefront/business identity)"]
+        Dashboard --> Settings["Settings (Bank Details + Notifications tabs)"]
         Dashboard --> Help
         Orders --> Customers
+        PaymentLinks --> Payments
+        QRPayments --> Payments
     end
 
-    subgraph Customer [Customer - 4 pages]
-        PublicStore[Public Store] --> Checkout
-        Checkout --> Receipt
+    subgraph Customer [Customer - 3 pages]
+        PublicStore["Public Store (+ Pay Securely modal)"] --> Receipt["Receipt (Success Card + Invoice + Review prompt)"]
         Receipt --> PublicStore
     end
 
-    subgraph Admin [Admin - 6 pages]
-        AdminDashboard[Admin Dashboard] --> MerchantMgmt[Merchant Management]
+    subgraph Admin [Admin - 7 pages]
+        AdminLogin --> AdminDashboard[Admin Dashboard]
+        AdminDashboard --> MerchantMgmt["Merchant Management (monitor + suspend)"]
         AdminDashboard --> ReportsAnalytics["Reports & Analytics"]
         AdminDashboard --> RefundsDisputes["Refunds & Disputes"]
         AdminDashboard --> System["System (Logs + Monitoring tabs)"]
@@ -1049,10 +1206,13 @@ flowchart LR
         MerchantMgmt --> Orders
     end
 
-    Products -.shared link/QR.-> PublicStore
+    WebsitePreview -.store already live, no approval step.-> PublicStore
+    PaymentLinks -.shared link.-> PublicStore
+    QRPayments -.QR code.-> PublicStore
+    MerchantMgmt -.suspend, anytime after launch.-> PublicStore
 ```
 
-*Note: the AI chat floating action button and the notification bell are persistent overlay elements reachable from every Entrepreneur page — they route into the AI Setup Concierge/Dashboard and the Settings page's Notifications tab respectively, so they're deliberately left off this diagram as elements rather than nodes (Section 14's note on persistent UI elements).*
+*Note: the AI chat floating action button and the notification bell are persistent overlay elements reachable from every Entrepreneur page — they route into Onboarding's AI path/Analytics' earnings AI and the Settings page's Notifications tab respectively, so they're deliberately left off this diagram as elements rather than nodes (Section 14's note on persistent UI elements). The Pay Securely modal is likewise an overlay on Public Store, not a separate node — see Section 15.1. Reviews is fed by the Customer-side Post-Payment Review Prompt (Section 15.2), not shown as a direct customer→admin edge above since the customer never navigates there directly.*
 
 ---
 
@@ -1080,6 +1240,8 @@ flowchart TD
     MERCHANTS --> PRODUCTS["products/{productId}"]
     MERCHANTS --> ORDERS["orders/{orderId}"]
     MERCHANTS --> AICONVOS["aiConversations/{conversationId}"]
+    MERCHANTS --> GALLERY["gallery/{imageId}"]
+    MERCHANTS --> PAYOUT["payout/details (stricter rules)"]
 
     ORDERS --> REFUNDS["refunds/{refundId}"]
 ```
@@ -1098,7 +1260,7 @@ The document ID is the **Firebase Authentication UID** — the unique identifier
 |---|---|---|
 | `email` | string | from Firebase Authentication; unique per Firebase's own enforcement, not PayLink's |
 | `authProvider` | string | `password` \| `google.com` — which method the account was created/last signed in with |
-| `role` | string | `entrepreneur` \| `customer` \| `admin` \| `senior_admin` |
+| `role` | string | `entrepreneur` \| `customer` — Admin is not represented in this collection at all (Section 24.4, separate auth system) |
 | `emailVerified` | boolean | mirrors Firebase Authentication's own `emailVerified` flag |
 | `createdAt` | timestamp | |
 
@@ -1107,16 +1269,57 @@ The document ID is the **Firebase Authentication UID** — the unique identifier
 |---|---|---|
 | `userId` | string | references `users/{userId}` (i.e., the Firebase Auth UID) |
 | `businessName` | string | |
+| `ownerName` | string, nullable | the person running the business, distinct from the business name — Profile page (14.14), implemented |
 | `tagline` | string, nullable | |
+| `description` | string, nullable | longer "About Us" business description — Profile page (14.14), implemented |
+| `whyChooseUs` | array of strings, nullable | short bullet points for the storefront's "Why Choose Us" card — **documented, not yet implemented**: no write path (Profile page) or read path (storefront card) exists for this field yet, unlike everything else in this table |
+| `category` | string | |
+| `email` | string, nullable | business contact email, separate from the Firebase Auth login email — Profile page (14.14), implemented |
+| `phone` | string, nullable | Profile page (14.14), implemented |
+| `whatsapp` | string, nullable | Profile page's Contact & Location card (14.14) — the ONLY place this is collected; not duplicated under `socialLinks` below (an earlier revision of this document had both, which was a real inconsistency, not a deliberate two-field design — resolved in favor of this one home) |
+| `address` | map, nullable | `{ line1, line2, city, state, postalCode, country }` — Profile page (14.14), implemented |
+| `googleMapsUrl` | string, nullable | a plain share-link URL the merchant pastes from Google Maps — deliberately not an embedded map/Places API integration, consistent with this project's no-Blaze-plan cost posture (Section 32) |
+| `businessHours` | map, nullable | `{ mon..sun: { open, close, closed } \| null }`, one entry per weekday — implemented as structured per-day hours from the start (this row previously described a simpler "single display string for MVP" that was never actually how the code worked) |
+| `timeZone` | string, nullable | IANA time zone name — **documented, not yet implemented**: Dashboard/Analytics figures (Sections 14.3/14.10) are computed in server-local time today, not per-merchant time zone |
+| `theme` | map, nullable | `{ primaryColor, secondaryColor }` — hex values applied to the storefront (Section 17.1's tokens remain the *product's own* default theme; this is a per-merchant override layer) |
+| `socialLinks` | map, nullable | `{ website, instagram, facebook }` — `whatsapp` deliberately removed from this map (see `whatsapp` row above) |
 | `photoBase64` | string, nullable | compressed profile photo, base64-encoded — see size budget below |
 | `logoBase64` | string, nullable | compressed business logo, base64-encoded — see size budget below |
-| `category` | string | |
-| `status` | string | `pending_setup` \| `pending_approval` \| `active` \| `suspended` \| `rejected` |
+| `coverBannerBase64` | string, nullable | compressed hero cover banner, base64-encoded — see size budget below |
+| `ratingAverage` | number, default `0` | cached average, recalculated whenever a new rating is written (Section 19.2 `orders.rating`) — avoids re-reading every order on every storefront page load |
+| `ratingCount` | number, default `0` | cached count, same reasoning |
+| `status` | string | `pending_setup` \| `active` \| `suspended` |
 | `surfboardSubmerchantId` | string, nullable | set once the Surfboard sub-merchant call completes |
 | `pageSlug` | string | must have a matching `pageSlugs/{slug}` document (below) |
 | `createdAt` | timestamp | |
 
-**Image size budget (why this stays safely under Firestore's 1MB document limit):** both images are compressed client-side with `browser-image-compression` before upload — profile photo to ~150KB / 600px max dimension, logo to ~100KB / 400px max dimension. Base64 encoding adds roughly 33% overhead, so the two images together land around 330KB, leaving well over 600KB of headroom for every other field on this document. This is a deliberate budget, not an accident — if either compression target is loosened later, re-check the total against the 1MB ceiling before shipping.
+**Image size budget, revised for three hero images instead of two:** profile photo (~100KB / 500px max), logo (~80KB / 400px max), and cover banner (~120KB / 1200px-wide max) are each compressed client-side with `browser-image-compression`. Base64 encoding adds roughly 33% overhead, so the three together land around 400KB — leaving comfortable headroom under the 1MB document limit for every text field above. **Gallery images are deliberately *not* embedded here** — see the `gallery` subcollection below; embedding an array of several gallery images directly on this document would risk exceeding the 1MB limit on its own, on top of these three hero images.
+
+#### `merchants/{merchantId}/gallery/{imageId}`
+A subcollection, not an array field on the merchant document — each gallery image is its own small document (~50–80KB compressed base64), independently well under any size limit, and addable/removable without rewriting the entire merchant profile.
+
+| Field | Type | Notes |
+|---|---|---|
+| `imageBase64` | string | compressed gallery image |
+| `order` | number | display order in the gallery grid |
+| `createdAt` | timestamp | |
+
+#### `merchants/{merchantId}/payout/details`
+A single document, deliberately kept in **its own subcollection with its own stricter Firestore Security Rules** rather than as fields on the main merchant document — the main merchant document is read by the public storefront query (Section 15.1), and financial details must never be exposed through that same read path. Only the merchant themself and Admin can read this document.
+
+**Revision note (reverted):** an earlier revision of this document moved bank details into onboarding itself, required on both the AI and manual paths. That's been reverted — onboarding (Section 14.2) collects only the merchant profile and storefront content; bank/settlement details are entered afterward, entirely optionally at first, from **Settings → Bank Details** (Section 14.12), whenever the entrepreneur is ready to receive a payout. A merchant can be `active` and taking payments indefinitely with this subcollection entirely empty — `completedAt` being unset is the normal, expected state for a newly onboarded store, not a defensive edge case.
+
+| Field | Type | Notes |
+|---|---|---|
+| `bankName` | string | entered later, from Settings → Bank Details (Section 14.12) |
+| `accountHolderName` | string | |
+| `accountNumber` | string | stored per Section 28's encryption-at-rest guarantees; never rendered back in full to the client after initial entry |
+| `ifscSwift` | string | IFSC or SWIFT depending on the entrepreneur's country |
+| `branch` | string, nullable | |
+| `accountType` | string | e.g., `savings` \| `checking` \| `current` |
+| `upiId` | string, nullable | optional |
+| `settlementCurrency` | string | ISO 4217 |
+| `completedAt` | timestamp | set the first time the entrepreneur successfully saves Bank Details in Settings — null until then, which is the normal state for any newly onboarded store |
 
 #### `pageSlugs/{slug}`
 A **lookup collection that exists purely to enforce uniqueness** — Firestore has no `UNIQUE` constraint, so instead the slug itself is used as a document ID in its own top-level collection. Creating a merchant's page slug and this lookup document happens inside a single Firestore transaction: read `pageSlugs/{slug}`, and only proceed if it doesn't already exist.
@@ -1191,11 +1394,11 @@ Top-level (not nested under a merchant) so the Admin Refunds & Disputes page (16
 | `resolvedAt` | timestamp, nullable | |
 
 #### `adminActions/{actionId}`
-Top-level and **append-only by rule**, not just by convention — a Firestore Security Rule explicitly denies `update` and `delete` on this collection, so it can't be edited even by a senior-admin's own client, only ever created.
+Top-level and **append-only by rule**, not just by convention — a Firestore Security Rule explicitly denies `update` and `delete` on this collection, so it can't be edited even by an admin's own client, only ever created. Since Admin is authenticated separately from Firebase (Section 24.4) and has no `users/{userId}` document, `adminId` here is a simple identifier string (e.g., `"admin"` for the single dev credential, or a distinct code per operator if multiple admin credentials are ever provisioned) rather than a Firebase UID reference.
 
 | Field | Type | Notes |
 |---|---|---|
-| `adminId` | string | |
+| `adminId` | string | identifies which admin credential performed the action — not a `users/{userId}` reference (Section 24.4) |
 | `actionType` | string | |
 | `targetId` | string | |
 | `notes` | string, nullable | |
@@ -1248,7 +1451,7 @@ const snapshot = await db
 This requires a **composite collection group index** to be configured in Firestore (declared in `firestore.indexes.json`, deployed alongside the app) — without it, this exact query shape would be rejected at runtime with an index-required error, which is Firestore's way of forcing query patterns to be planned for upfront rather than discovered as a slow full-scan in production.
 
 ### 19.5 Privacy Note on Customers
-Same principle as before, just implemented differently: PayLink does not maintain a full customer document at all. `orders.customerRef` is a hashed value derived from the phone/email used at checkout, stored directly as a field on the order — used only so the entrepreneur's Customers page (14.6) can group orders by repeat customer. There is no separate `customers` collection, no cross-merchant customer profile, and no browsing/marketing history retained.
+Same principle as before, just implemented differently: PayLink does not maintain a full customer document at all. `orders.customerRef` is a hashed value derived from the phone/email used at checkout, stored directly as a field on the order — used only so the entrepreneur's Customers page (14.9) can group orders by repeat customer. There is no separate `customers` collection, no cross-merchant customer profile, and no browsing/marketing history retained.
 
 ### 19.6 Example Documents
 
@@ -1331,8 +1534,9 @@ backend/
 │   │   ├── payment.repository.js
 │   │   └── admin.repository.js
 │   ├── middleware/
-│   │   ├── auth.middleware.js       # Verifies Firebase ID token via Admin SDK, attaches req.user
-│   │   ├── role.middleware.js       # Role-based access checks (entrepreneur/admin)
+│   │   ├── auth.middleware.js       # Verifies Firebase ID token via Admin SDK, attaches req.user (merchants only)
+│   │   ├── adminAuth.middleware.js    # Verifies the admin session token against ADMIN_JWT_SECRET (Section 24.4) - entirely separate check from auth.middleware.js, since Admin isn't a Firebase user
+│   │   ├── role.middleware.js       # Route-level check for which of the two middlewares above a given endpoint requires
 │   │   ├── rateLimit.middleware.js
 │   │   ├── errorHandler.middleware.js
 │   │   └── requestLogger.middleware.js
@@ -1377,46 +1581,59 @@ backend/
 frontend/
 ├── src/
 │   ├── pages/
-│   │   ├── entrepreneur/           # 8 pages
+│   │   ├── shared/                    # 1 page, owned by neither role
+│   │   │   └── Landing.jsx                  # 13.5 - role chooser: Merchant / Admin
+│   │   ├── entrepreneur/           # 14 pages
 │   │   │   ├── Auth.jsx                    # 14.1 - email/password + Google Sign-In, one flow
-│   │   │   ├── AiSetupConcierge.jsx         # 14.2
-│   │   │   ├── Dashboard.jsx                 # 14.3 - includes AI Earnings Assistant
+│   │   │   ├── Onboarding/                   # 14.2 - AI path + manual path — profile + storefront ONLY, no bank details
+│   │   │   │   ├── ChoiceScreen.jsx
+│   │   │   │   ├── AiSetupPath.jsx
+│   │   │   │   ├── ManualSetupPath.jsx
+│   │   │   │   └── WebsitePreview.jsx        # 14.2b - shown before Dashboard, "Continue to Dashboard"
+│   │   │   ├── Dashboard.jsx                 # 14.3 - quick earnings snapshot only; deep AI Q&A lives in Analytics
 │   │   │   ├── Orders/                        # 14.4 - tabbed page
 │   │   │   │   ├── OrdersTab.jsx
-│   │   │   │   ├── TransactionsTab.jsx
 │   │   │   │   └── RefundsTab.jsx
-│   │   │   ├── Products/                        # 14.5 - tabbed page
-│   │   │   │   ├── CatalogTab.jsx
-│   │   │   │   └── PreviewShareTab.jsx
-│   │   │   ├── Customers.jsx                       # 14.6
-│   │   │   ├── Settings/                             # 14.7 - tabbed page
-│   │   │   │   ├── ProfileBusinessTab.jsx
-│   │   │   │   ├── PayoutLanguageTab.jsx
+│   │   │   ├── Payments.jsx                     # 14.5 - raw ledger, split out from Orders
+│   │   │   ├── PaymentLinks.jsx                   # 14.6 - new
+│   │   │   ├── QrPayments.jsx                       # 14.7 - new
+│   │   │   ├── Products.jsx                           # 14.8 - catalog only now
+│   │   │   ├── Customers.jsx                             # 14.9
+│   │   │   ├── Analytics.jsx                               # 14.10 - AI Earnings Assistant + charts, split from Dashboard
+│   │   │   ├── Reviews.jsx                                   # 14.11 - new
+│   │   │   ├── Settings/                                       # 14.12 - tabbed page, account/payout only
+│   │   │   │   ├── BankDetailsTab.jsx                              # entered here for the first time, never at onboarding
+│   │   │   │   ├── LanguageTab.jsx
 │   │   │   │   └── NotificationsTab.jsx
-│   │   │   └── Help.jsx                                # 14.8
-│   │   ├── customer/                # 4 pages
-│   │   │   ├── PublicStore.jsx              # 15.1 - includes landing/empty-slug state
-│   │   │   ├── Checkout.jsx                   # 15.2 - includes inline failure state
-│   │   │   ├── Receipt.jsx                      # 15.3 - includes success animation + rating prompt
-│   │   │   └── Support.jsx                        # 15.4
-│   │   └── admin/                     # 6 pages
-│   │       ├── AdminDashboard.jsx           # 16.1
-│   │       ├── MerchantManagement.jsx         # 16.2
-│   │       ├── ReportsAnalytics/                # 16.3 - tabbed page
+│   │   │   ├── Profile.jsx                                       # 14.14 - new, split out of Settings: storefront/business identity editing
+│   │   │   └── Help.jsx                                          # 14.13
+│   │   ├── customer/                # 3 pages
+│   │   │   ├── PublicStore.jsx              # 15.1 - full storefront + landing/empty-slug state
+│   │   │   ├── PaySecurelyModal.jsx          # part of Public Store, not a route - includes inline failure state
+│   │   │   ├── Receipt/                         # 15.2 - Success Card + full invoice, not a single flat page
+│   │   │   │   ├── SuccessCard.jsx
+│   │   │   │   ├── InvoiceReceipt.jsx
+│   │   │   │   └── ReviewPrompt.jsx
+│   │   │   └── Support.jsx                        # 15.3
+│   │   └── admin/                     # 7 pages
+│   │       ├── AdminLogin.jsx                # 16.0 - Access Code + Password, no registration
+│   │       ├── AdminDashboard.jsx              # 16.1
+│   │       ├── MerchantManagement.jsx            # 16.2
+│   │       ├── ReportsAnalytics/                   # 16.3 - tabbed page
 │   │       │   ├── ReportsTab.jsx
 │   │       │   └── AnalyticsTab.jsx
-│   │       ├── RefundsDisputes/                   # 16.4 - tabbed page
+│   │       ├── RefundsDisputes/                      # 16.4 - tabbed page
 │   │       │   ├── RefundsTab.jsx
 │   │       │   └── DisputesTab.jsx
-│   │       ├── System/                              # 16.5 - tabbed page
+│   │       ├── System/                                 # 16.5 - tabbed page
 │   │       │   ├── LogsTab.jsx
 │   │       │   └── MonitoringTab.jsx
-│   │       └── AdminSettings.jsx                       # 16.6
+│   │       └── AdminSettings.jsx                          # 16.6
 │   ├── components/           # Reusable, presentational components (Button, Card, Table, Chart wrappers), including the persistent AI chat FAB and Notification Center dropdown (Section 17.7) that live outside the page tree
-│   ├── hooks/                  # useAuth, useMerchant, useOrders, useAiChat
-│   ├── context/                  # AuthContext, MerchantContext
+│   ├── hooks/                  # useAuth, useAdminAuth, useMerchant, useOrders, useAiChat
+│   ├── context/                  # AuthContext (merchant, Firebase-backed), AdminAuthContext (separate, Section 24.4-backed), MerchantContext
 │   ├── api/                       # One thin wrapper module per backend domain (mirrors Section 22)
-│   ├── routes/                     # Route definitions + role-guarded route wrappers
+│   ├── routes/                     # Route definitions + role-guarded route wrappers (two distinct guards: merchant vs admin, since they're two separate auth systems)
 │   ├── theme/                       # Design tokens (colors, spacing, typography) from Section 17
 │   └── App.jsx
 ├── public/
@@ -1456,9 +1673,9 @@ This is the layer that keeps PayLink's image and document handling entirely insi
 
 | Library | Package | Used For | Loaded |
 |---|---|---|---|
-| Browser image compression | `browser-image-compression` | Compresses profile photo, business logo, and product images client-side before they're stored as base64 (Section 19.2) | Dynamically imported on the Settings (14.7) and Products (14.5) pages only |
-| QR generation | `qrcode.react` | Renders the QR code as an SVG/canvas component client-side (Section 14.5, Preview & Share tab) — no backend call | Dynamically imported on the Products page's Preview & Share tab only |
-| PDF generation | `jspdf` | Builds the downloadable bill PDF (Section 15.3) from the order data already available in the browser — regenerated on demand, never persisted server-side | Dynamically imported on the Receipt page only |
+| Browser image compression | `browser-image-compression` | Compresses profile photo, business logo, cover banner, gallery, and product images client-side before they're stored as base64 (Section 19.2) | Dynamically imported on the Settings (14.12) and Products (14.8) pages only |
+| QR generation | `qrcode.react` | Renders the QR code as an SVG/canvas component client-side (Section 14.7) — no backend call | Dynamically imported on the QR Payments page only |
+| PDF generation | `jspdf` | Builds the downloadable bill PDF (Section 15.2) from the order data already available in the browser — regenerated on demand, never persisted server-side | Dynamically imported on the Receipt page only |
 
 None of these three appear in the main app bundle — each is loaded only on the specific page that needs it, consistent with the route-based code-splitting approach in Section 21.7.
 
@@ -1469,7 +1686,7 @@ None of these three appear in the main app bundle — each is loaded only on the
 All endpoints are prefixed with `/api`. All authenticated endpoints require header `Authorization: Bearer <firebase-id-token>` unless marked Public — this is the ID token issued by the Firebase Authentication client SDK, not a token PayLink's backend generates itself (Section 24).
 
 ### 22.1 Auth
-**Sign-up, login, Google Sign-In, and password reset are not PayLink backend endpoints at all** — they're handled directly by the Firebase Authentication client SDK in the frontend, which talks straight to Firebase's own servers. This is a deliberate simplification: PayLink's backend never sees a password, never issues its own session tokens, and has exactly one auth-related endpoint of its own.
+**Sign-up, login, Google Sign-In, and password reset for merchants are not PayLink backend endpoints at all** — they're handled directly by the Firebase Authentication client SDK in the frontend, which talks straight to Firebase's own servers. This is a deliberate simplification: PayLink's backend never sees a merchant's password, never issues its own session tokens for that role, and has exactly one merchant auth-related endpoint of its own.
 
 **POST /api/auth/session**
 - Auth: Requires a valid Firebase ID token in the `Authorization` header (obtained client-side from the Firebase Auth SDK immediately after sign-up/login/Google Sign-In)
@@ -1477,6 +1694,13 @@ All endpoints are prefixed with `/api`. All authenticated endpoints require head
 - Body: none required — all identity info comes from the verified token itself
 - Response 200: `{ "isNewUser": true, "merchantId": "..." }`
 - Errors: `401 INVALID_TOKEN`
+
+**POST /api/auth/admin-login**
+- Auth: Public (this endpoint *is* the admin login check — see Section 24.4)
+- Body: `{ "accessCode": "...", "password": "..." }`
+- Business Logic: Compares against the configured admin credential (hardcoded dev values in this phase — Section 24.4 — a securely hashed, stored credential in any real deployment); on success, issues a short-lived admin session token signed with `ADMIN_JWT_SECRET`
+- Response 200: `{ "adminToken": "..." }`
+- Errors: `401 INVALID_CREDENTIALS`, `429 RATE_LIMITED` (repeated failed attempts should be rate-limited given there's no account-lockout/registration flow to fall back on)
 
 ### 22.2 Merchants
 
@@ -1592,14 +1816,15 @@ All endpoints are prefixed with `/api`. All authenticated endpoints require head
 - Query params: `status`, `page`, `pageSize`
 - Response 200: paginated merchant list
 
-**POST /api/admin/merchants/:id/approve**
+**POST /api/admin/merchants/:id/suspend**
+- Auth: Authenticated (admin)
+- Body: `{ "note": "Flagged for suspicious pricing pattern" }`
+- Business Logic: Takes effect immediately — disables checkout on that merchant's storefront the same instant (Section 30, rule 7), no queued/delayed state
+- Response 200: `{ "status": "suspended" }`
+
+**POST /api/admin/merchants/:id/reactivate**
 - Auth: Authenticated (admin)
 - Response 200: `{ "status": "active" }`
-
-**POST /api/admin/merchants/:id/reject**
-- Auth: Authenticated (admin)
-- Body: `{ "reason": "Incomplete business information" }`
-- Response 200: `{ "status": "rejected" }`
 
 **GET /api/admin/reports**
 - Auth: Authenticated (admin)
@@ -1625,8 +1850,8 @@ All endpoints are prefixed with `/api`. All authenticated endpoints require head
 |---|---|---|
 | **Merchant Creation** | One-time setup of PayLink's own single verified merchant identity | Platform-level setup (not per-entrepreneur) |
 | **Multi Merchant Groups** | Creates each entrepreneur as a sub-merchant under PayLink's identity | `POST /api/merchants` |
-| **Store Capabilities** | Configures catalog items, custom-amount toggle, accepted payment method restrictions | AI Setup Concierge confirmation, Products page |
-| **Configure Branding** | Sets photo, tagline, and theme on the sub-merchant's page | AI Setup Concierge confirmation, Profile page |
+| **Store Capabilities** | Configures catalog items, custom-amount toggle, accepted payment method restrictions | Onboarding confirmation (either path), Products page |
+| **Configure Branding** | Sets photo, tagline, and theme on the sub-merchant's page | Onboarding confirmation (either path), Settings page |
 | **Merchant Functions** | Open/Closed status toggle | Dashboard header toggle |
 | **Payment Processing (Make Your Payments)** | Executes the actual one-time or recurring charge | `POST /api/payments/create` |
 | **Payment Methods** | Enables card/Swish/wallet per sub-merchant | Products/Settings configuration |
@@ -1648,7 +1873,7 @@ PayLink's backend authenticates to Surfboard using a **Client Auth Token** scope
 4. Final capture confirmation arrives asynchronously via webhook (`POST /api/webhooks/surfboard`), which is the authoritative source of truth for `payments.status`.
 
 ### 23.4 Error Handling
-- Synchronous call failures (network/timeout) → order marked `failed`, customer shown the failure state on the Checkout page (Section 15.2) with a retry option.
+- Synchronous call failures (network/timeout) → order marked `failed`, customer shown the failure state inline within the Pay Securely modal (Section 15.1) with a retry option.
 - Declined payments → distinguished from system errors and shown with a plain-language reason.
 - Webhook delivery failures → Surfboard's own retry mechanism is relied upon; PayLink additionally reconciles any `authorized`-but-not-yet-`captured` payment via a scheduled polling job (`jobs/`) after a configurable timeout, to avoid orders being stuck indefinitely.
 
@@ -1663,27 +1888,45 @@ PayLink's backend applies its own internal rate limiting on AI-adjacent and logi
 
 ## 24. Authentication
 
-### 24.1 Firebase Authentication (Email/Password + Google Sign-In)
-Primary authentication method for entrepreneurs, replacing an earlier phone-OTP design that depended on a third-party SMS provider (Section 36, Risks). Entrepreneurs sign up/log in with email + password, or with **Google Sign-In**, both handled entirely by the Firebase Authentication client SDK — PayLink's backend never receives or stores a password. Password reset is handled by Firebase's own built-in reset-email flow, at no extra cost and no external email provider.
+> **Two separate authentication systems, not one.** Merchants authenticate via Firebase Authentication (24.1–24.3). Admin does **not** — admin has no registration, no Firebase account, and no email/password/Google flow at all. This split is deliberate: Admin is an internal operations role, never publicly self-serve, so it doesn't belong in the same system as public merchant signup.
 
-### 24.2 Firebase ID Tokens (replacing a custom JWT system)
-Because Firebase Authentication already issues and manages its own tokens, PayLink does **not** maintain a custom `JWT_SECRET`/refresh-token system — that entire layer is unnecessary once the client SDK is doing the work.
+### 24.1 Merchant Authentication — Firebase (Email/Password + Google Sign-In)
+Entrepreneurs sign up/log in with email + password, or with **Google Sign-In**, both handled entirely by the Firebase Authentication client SDK — PayLink's backend never receives or stores a password. Password reset is handled by Firebase's own built-in reset-email flow, at no extra cost and no external email provider.
+
+### 24.2 Firebase ID Tokens (replacing a custom JWT system, merchants only)
+Because Firebase Authentication already issues and manages its own tokens, PayLink does **not** maintain a custom `JWT_SECRET`/refresh-token system for merchants — that entire layer is unnecessary once the client SDK is doing the work.
 - **ID token:** issued by Firebase on sign-in, short-lived (~1 hour), automatically refreshed by the Firebase client SDK in the background — the frontend never has to manually manage expiry or refresh logic.
-- **Backend verification:** every authenticated request carries this ID token in the `Authorization` header; the backend verifies it using the Firebase Admin SDK (`admin.auth().verifyIdToken()`), which checks the signature against Firebase's own public keys — no shared secret to configure or leak on PayLink's side.
-- **Custom claims (roles):** `admin` and `senior_admin` roles are set as Firebase Auth **custom claims** via the Admin SDK (an internal, out-of-band process — see 24.5), so the role travels inside the verified token itself rather than requiring a separate Firestore read on every request; the `role` field also stored on the `users` document (Section 19.2) is kept in sync for convenience but the custom claim is the source of truth the backend actually checks.
+- **Backend verification:** every merchant-authenticated request carries this ID token in the `Authorization` header; the backend verifies it using the Firebase Admin SDK (`admin.auth().verifyIdToken()`), which checks the signature against Firebase's own public keys — no shared secret to configure or leak on PayLink's side.
 
-### 24.3 Session Handling
+### 24.3 Session Handling (Merchant)
 The Firebase Authentication client SDK manages session persistence itself (including across page reloads) — PayLink's frontend does not implement its own token storage logic; it simply reads the current user's ID token from the SDK whenever it needs to attach it to a backend request.
 
-### 24.4 Permissions & Roles
-| Role | Access |
-|---|---|
-| `entrepreneur` | Own merchant record and everything scoped beneath it (products, orders, AI chat) |
-| `admin` | All merchants, all orders (read), approval/dispute/refund-monitoring actions |
-| `senior_admin` | Everything `admin` has, plus platform-level Settings (Section 16.6) |
+### 24.4 Admin Authentication — Access Code + Password (Not Firebase)
+Admin login is a completely separate, minimal mechanism: an **Access Code** and a **Password**, checked directly against the backend — no registration screen exists anywhere in the product, and none should ever be built. This is intentional: an admin account is provisioned internally, never created by a public-facing flow.
 
-### 24.5 Security Notes
-Admin and senior-admin roles are never self-assignable through any public endpoint or client-side action — they're granted only by a manual, out-of-band process using the Firebase Admin SDK's custom-claims API, never through the application's own frontend or API surface. Google Sign-In accounts inherit whatever security posture the user's own Google account has (e.g., Google's own 2FA if they've enabled it) — a modest side benefit of offering it as an option alongside email/password.
+**Development credentials (hardcoded, this environment only):**
+```
+Access Code: pandisabi
+Password:    pandisabi
+```
+
+**⚠️ This is a development-only placeholder, not a production design.** Before any real deployment, this must be replaced with one of: a securely hashed, database-stored admin credential set (bcrypt/argon2, never plaintext); a proper identity provider (e.g., Firebase Auth used *only* internally for admin, with no public sign-up route exposed); or an internal SSO/IAM system if PayLink ever has more than a handful of admin operators. Shipping the hardcoded `pandisabi`/`pandisabi` pair to production would be a critical security failure — this document flags it explicitly so it is never mistaken for a finished feature.
+
+On successful Access Code + Password check, the backend issues its own short-lived signed session token for the admin (a simple JWT the backend controls, since there's no Firebase Auth session backing this role) — this is the one place in the system where PayLink *does* still need a small `ADMIN_JWT_SECRET`, separate from anything merchant-facing.
+
+### 24.5 Session Handling (Admin)
+Admin's session token is stored the same way a merchant's would be handled if PayLink managed it directly (Section 28.6) — sent via `Authorization` header, verified against `ADMIN_JWT_SECRET` on every admin-role request, short expiry, re-prompting for the Access Code + Password on expiry rather than a silent refresh (admin sessions are deliberately not "remember me" by default, given the scope of access this role has).
+
+### 24.6 Permissions & Roles
+| Role | Auth System | Access |
+|---|---|---|
+| `entrepreneur` | Firebase Authentication | Own merchant record and everything scoped beneath it (products, orders, AI chat) |
+| `admin` | Access Code + Password (24.4) | All merchants, all orders (read), suspend/reactivate, dispute/refund-monitoring actions, platform settings |
+
+*(The earlier `senior_admin` role and its extra platform-settings permission are folded into the single `admin` role for this revision, since Admin no longer has a public registration path to guard against privilege escalation through — reintroduce a tiered role if the operations team grows large enough to need it.)*
+
+### 24.7 Security Notes
+Google Sign-In accounts inherit whatever security posture the user's own Google account has (e.g., Google's own 2FA if they've enabled it) — a modest side benefit of offering it as an option alongside email/password for merchants. Admin's Access Code + Password pair should be rotated immediately upon any real deployment and never committed to source control even as a "temporary" value — treat the note in 24.4 as a launch blocker, not a nice-to-have.
 
 ---
 
@@ -1713,12 +1956,12 @@ sequenceDiagram
         BE->>BE: Generate Receipt
         BE->>C: Notification - payment successful
     else Failed
-        FE->>C: Show inline failure state on Checkout page
+        FE->>C: Show inline failure state in Pay Securely modal
     end
 ```
 
 ### 25.2 Payment Creation
-Initiated from Checkout (15.2) via `POST /api/orders` followed by `POST /api/payments/create`. The order record is created in `pending` status before payment is attempted, so an abandoned checkout still leaves an auditable (if incomplete) trail.
+Initiated from the Pay Securely modal (Section 15.1) via `POST /api/orders` followed by `POST /api/payments/create`. The order record is created in `pending` status before payment is attempted, so an abandoned checkout still leaves an auditable (if incomplete) trail.
 
 ### 25.3 Authorization
 Surfboard returns an initial authorization result synchronously. PayLink treats this as provisional — the webhook-confirmed capture is the authoritative state (Section 23.4).
@@ -1733,7 +1976,7 @@ PayLink holds a brief reserve per Surfboard's standard settlement terms before r
 Entrepreneur-initiated from the Orders page's Orders or Refunds tab (14.4). See Section 22.6 for the endpoint contract and Section 23 for the Surfboard call itself.
 
 ### 25.7 Failure
-Distinguished at the UI layer between customer-fixable (declined card) and system-level (provider unavailable) failures, per Section 15.2's inline failure state.
+Distinguished at the UI layer between customer-fixable (declined card) and system-level (provider unavailable) failures, per Section 15.1's Pay Securely modal inline failure state.
 
 ### 25.8 Retry
 Customer-initiated retry re-invokes `POST /api/payments/create` against the same `orderId` rather than creating a new order, to keep the order/payment relationship one-to-one and avoid duplicate order records for a single checkout attempt.
@@ -1768,7 +2011,7 @@ sequenceDiagram
     FE->>BE: POST /api/merchants/:id/products (bulk) + PATCH branding
     BE->>SB: Store Capabilities + Configure Branding
     SB-->>BE: Confirmation
-    BE-->>FE: Store pending_approval
+    BE-->>FE: Store active - live immediately, no approval step
 ```
 
 ### 26.2 Sequence Diagram — AI Earnings Assistant
@@ -1809,7 +2052,7 @@ Neither module gives the AI direct, unmediated write access to Surfboard or the 
 - Timezone normalization for all earnings figures
 
 ### 26.7 Fallback
-- Setup Concierge unavailable → manual "Add Item" form on the Products page (Section 14.5)
+- Setup Concierge unavailable → manual onboarding path/Products page (Section 14.8)
 - Earnings Assistant unavailable or insufficient data → plain "I don't have enough data" response + link to raw Orders/Transactions tables
 
 ---
@@ -1825,12 +2068,12 @@ Neither module gives the AI direct, unmediated write access to Surfboard or the 
 | Refund issued | ✅ | ✅ | ✅ |
 | Recurring charge upcoming | ✅ | ✅ | ✅ |
 | Recurring charge failed | ✅ | ✅ | ✅ |
-| Merchant approved | ✅ | — | ✅ |
-| Merchant rejected | ✅ | — | ✅ |
+| Store live (immediately on completing onboarding) | ✅ | — | ✅ |
+| Merchant suspended | ✅ | — | ✅ |
 | Dispute opened (admin) | ✅ | — | ✅ |
 
 ### 27.1 Delivery & Retry
-`notification.service.js` queues all notifications; `jobs/notificationRetry.job.js` retries failed sends (e.g., a transient email-provider failure) up to 3 times before marking `status = failed` and surfacing it in the entrepreneur's Settings → Notifications tab (14.7) with a manual "resend" option.
+`notification.service.js` queues all notifications; `jobs/notificationRetry.job.js` retries failed sends (e.g., a transient email-provider failure) up to 3 times before marking `status = failed` and surfacing it in the entrepreneur's Settings → Notifications tab (14.12) with a manual "resend" option.
 
 ### 27.2 Webhook (Outbound, Future)
 A future roadmap item (Section 35) is an outbound webhook capability so entrepreneurs can pipe order events into their own tools (e.g., a spreadsheet or WhatsApp Business flow) — not in MVP scope.
@@ -1877,7 +2120,7 @@ Security review is periodically checked against the OWASP Top 10 (injection, bro
 
 ### 29.1 Frontend
 - Every data-fetching hook exposes `loading`, `error`, and `data` states explicitly; no page silently shows a blank screen on failure.
-- User-facing error messages are always plain-language (Section 15.2's failure-state style), with technical detail (correlation ID) available only in an expandable "details" affordance for support purposes.
+- User-facing error messages are always plain-language (Section 15.1's Pay Securely modal failure-state style), with technical detail (correlation ID) available only in an expandable "details" affordance for support purposes.
 
 ### 29.2 Backend
 - All thrown errors pass through `errorHandler.middleware.js`, which maps internal error types to the standard error shape (Section 22.10) and an appropriate HTTP status code.
@@ -1906,23 +2149,25 @@ Distinguished explicitly between:
 
 ## 30. Business Rules
 
-1. A store cannot go live (`active`) without passing Admin approval, regardless of AI Setup Concierge completion.
-2. Checkout is disabled entirely whenever a store's status is `closed`.
+1. A store goes `active` automatically the moment onboarding (either the AI path or the manual path, Section 14.2) completes — there is no admin approval gate before going live. This is a deliberate trade-off (Section 36, Risks); the compensating control is rule 7 below.
+2. Checkout is disabled entirely whenever a store's status is `closed` (merchant-toggled) or `suspended` (admin-imposed).
 3. A refund amount can never exceed the order's remaining refundable balance.
 4. Exactly one of `product_id` or `custom_amount` must be set per order item — never both, never neither.
 5. Customer ratings are visible only on the specific entrepreneur's own page — never aggregated into any cross-platform ranking or discovery feature.
 6. Recurring billing charges are attempted on schedule; after a configurable number of consecutive failures (default: 2), the recurring plan is auto-paused and the entrepreneur is notified rather than retried indefinitely.
-7. Admin rejection of a merchant always requires a reason, which is shown to the entrepreneur.
-8. Admin suspension of a merchant immediately disables checkout on that merchant's public page, without deleting any historical data.
-9. All admin actions are permanently logged and cannot be edited or deleted, even by a senior admin.
-10. Currency is set per-item at creation time and does not change retroactively on existing catalog items if the entrepreneur later changes their default currency preference — existing items must be edited explicitly.
-11. A phone number can be associated with only one entrepreneur account at a time.
-12. Order notes and rating comments are subject to a length cap and a basic profanity filter before being stored.
+7. Admin suspension of a merchant always requires an internal note and takes effect immediately, disabling checkout on that merchant's public page the same instant it's applied, without deleting any historical data — this is the only remaining safeguard against a bad-actor store now that pre-launch approval doesn't exist, so it cannot be a delayed or asynchronous action.
+8. All admin actions are permanently logged and cannot be edited or deleted, by anyone, including the admin who performed them.
+9. Currency is set per-item at creation time and does not change retroactively on existing catalog items if the entrepreneur later changes their default currency preference — existing items must be edited explicitly.
+10. An email address can be associated with only one entrepreneur account at a time — enforced natively by Firebase Authentication (Section 24.1), not by PayLink's own logic.
+11. Order notes and rating comments are subject to a length cap and a basic profanity filter before being stored.
+12. Settlement bank details (Section 14.14, 19.2) are **deliberately excluded from onboarding** on both the AI and manual paths — onboarding's job is creating the merchant profile and public storefront, nothing else. Bank details are entered afterward, from Settings → Bank Details (14.12), whenever the entrepreneur is ready to receive a real payout — not a blocking step before the store goes live. The payout job (Section 33) checks `payout/details.completedAt` defensively before running, since a merchant can legitimately reach `active` status (and take payments) with no payout details on file yet.
 
 
 ---
 
 ## 31. Folder Structure
+
+**Actual current layout, as it exists in the repo today:** `master-doc.md` (this file) and `README.md` both live at the **repository root**, not under a `docs/` folder — there is no `docs/`, `infra/`, or `.github/workflows/` directory in this repo. There IS a root-level `package.json` with npm workspaces (`backend`, `frontend`) and convenience scripts (`dev:backend`, `dev:frontend`, `build:backend`, `build:frontend`, `test:backend`) — see `README.md` for exact run commands. `README.md` is a full onboarding/reference document in its own right (architecture, how to run, page list, manual test script, Surfboard scenarios), not a short pointer to this file. The rest of the layout below (`docs/`, `infra/`, `.github/workflows/`) is the earlier-envisioned monorepo structure kept for reference/future-infra planning — treat it as aspirational, not a description of what exists.
 
 ### 31.1 Complete Repository Layout (Monorepo)
 ```
@@ -1950,8 +2195,8 @@ paylink/
 │       ├── ci.yml                    # Lint + test on every PR
 │       └── deploy.yml                 # Build + deploy on merge to main
 ├── .env.example
-├── README.md                            # Short pointer to docs/master-doc.md
-└── package.json                          # Root workspace config (if using npm/yarn/pnpm workspaces)
+├── README.md                            # Full onboarding doc today, not a short pointer — see the note above this diagram
+└── package.json                          # Root npm workspace config — this one IS present today (workspaces: backend, frontend)
 ```
 
 ### 31.2 Explanation of Top-Level Folders
@@ -2009,6 +2254,9 @@ SURFBOARD_CLIENT_SECRET=
 SURFBOARD_WEBHOOK_SIGNING_SECRET=
 GEMINI_API_KEY=
 EMAIL_PROVIDER_API_KEY=
+ADMIN_ACCESS_CODE=              # dev-only placeholder value, Section 24.4 - replace before production
+ADMIN_PASSWORD=                  # dev-only placeholder value, Section 24.4 - replace before production
+ADMIN_JWT_SECRET=                  # signs the admin session token issued by POST /api/auth/admin-login
 NODE_ENV=
 ```
 
@@ -2045,7 +2293,7 @@ Because AI output is non-deterministic in wording, tests assert against the **st
 ## 35. Future Roadmap
 
 ### Phase 1 (MVP — covered by this document)
-Email/password + Google Sign-In auth, AI Setup Concierge, catalog management, QR/poster generation, checkout (card/Swish/wallet), refunds, receipts, AI Earnings Assistant, admin approval/dispute handling.
+Email/password + Google Sign-In auth, AI or manual onboarding, catalog management, QR/poster generation, checkout (card/Swish/wallet), refunds, receipts, AI Earnings Assistant, admin monitoring/suspension/dispute handling.
 
 ### Phase 2
 - Recurring billing maturity (dunning flows, retry scheduling refinement)
@@ -2075,12 +2323,12 @@ Email/password + Google Sign-In auth, AI Setup Concierge, catalog management, QR
 ### Technical Risks
 - AI-generated catalog data could be misinterpreted for genuinely ambiguous business descriptions — mitigated by the confirmation step (Section 10.1) but not eliminated.
 - Webhook delivery delays or failures could cause a temporary mismatch between perceived and actual payment status — mitigated by the polling fallback (Section 23.4) but adds complexity.
-- Since February 2026, both Cloud Storage for Firebase and Cloud Functions require the paid Blaze plan (a linked billing account) even for free-tier usage — Spark alone is no longer sufficient for either. PayLink's mitigation is to avoid both entirely for images and generated documents: profile/logo/product images are compressed client-side and stored as base64 within Firestore documents (Section 19.2), and QR codes, posters, and PDF bills are generated client-side on demand (Sections 14.5, 15.3, 21.8) rather than server-side. This keeps the project on the no-card Spark plan; it should be revisited if a future phase genuinely needs server-side file storage or compute at a scale this approach can't cover.
+- Since February 2026, both Cloud Storage for Firebase and Cloud Functions require the paid Blaze plan (a linked billing account) even for free-tier usage — Spark alone is no longer sufficient for either. PayLink's mitigation is to avoid both entirely for images and generated documents: profile/logo/product images are compressed client-side and stored as base64 within Firestore documents (Section 19.2), and QR codes, payment links, and PDF receipts are generated client-side on demand (Sections 14.6, 14.7, 15.2, 21.8) rather than server-side. This keeps the project on the no-card Spark plan; it should be revisited if a future phase genuinely needs server-side file storage or compute at a scale this approach can't cover.
 - Third-party SMS delivery (Twilio) proved unreliable during development, which is the direct reason authentication moved from phone OTP to Firebase email/password + Google Sign-In (Section 24). This removed an entire external dependency from the critical login path rather than just working around one outage.
 
 ### Security Risks
 - Email/password accounts are only as strong as the password the entrepreneur chooses — mitigated by Firebase Authentication's built-in minimum-length enforcement, but PayLink doesn't currently enforce additional complexity rules or breached-password checks. Google Sign-In sidesteps this entirely for users who choose it, since it inherits whatever security posture (including 2FA) their Google account already has.
-- A single compromised admin account has broad visibility across all merchants — mitigated by the append-only audit log (Section 19.2 `admin_actions`) and role separation (`admin` vs `senior_admin`), but full mitigation would require additional controls (e.g., mandatory 2FA for admin roles).
+- A single compromised admin credential has broad visibility across all merchants — mitigated by the append-only audit log (Section 19.2 `admin_actions`), but there is only one admin role in this revision (Section 24.6), so full mitigation would require additional controls (e.g., mandatory 2FA once Admin moves off the development-only Access Code + Password credential, Section 24.4).
 
 ### Scalability Risks
 - Aggregating all sub-merchants under one Surfboard identity means any Surfboard-side rate limit or outage affects the entire platform at once, rather than being isolated per merchant.
@@ -2115,7 +2363,7 @@ Email/password + Google Sign-In auth, AI Setup Concierge, catalog management, QR
 7. **How do I sign up?** With your email and password, or by continuing with Google — no phone number or SMS code needed.
 8. **How does the AI Setup Concierge work?** You describe your business in your own words; the AI builds your catalog and page from that description.
 9. **What if the AI misunderstands my prices?** It will ask a clarifying question rather than guess, and you can always edit the draft before confirming.
-10. **How long does approval take?** Admin review is typically same-day for straightforward signups.
+10. **How long does it take to go live?** Instantly — your store goes live the moment you finish onboarding (AI or manual), no review or waiting period.
 11. **Can I change my catalog later?** Yes, at any time from the Products page.
 12. **Can I skip the AI and set up manually?** Yes — a manual "Add Item" form is always available as a fallback.
 
@@ -2163,7 +2411,8 @@ Email/password + Google Sign-In auth, AI Setup Concierge, catalog management, QR
 41. **Is the codebase a monorepo?** Yes — backend, frontend, and docs live together (Section 31).
 
 **Admin**
-42. **How does an admin approve a new merchant?** From the Merchant Management page's approval queue.
+42. **Does an admin need to approve a new merchant before they go live?** No — stores go live automatically on completing onboarding. Admins monitor live activity from the Merchant Management page and can suspend a merchant at any point if something looks wrong.
+42b. **How does an admin log in?** With an Access Code and Password — there's no admin registration screen anywhere in the product, and no Firebase account involved for this role (Section 24.4). The development credentials are a placeholder only, not how a real deployment would work.
 43. **Can an admin edit historical logs?** No — the audit log is append-only by design.
 44. **What triggers a merchant suspension?** Fraud suspicion, excessive refund rates, or a policy violation, reviewed manually by admin staff.
 45. **Can admins see individual customer data?** Only what's necessary for dispute resolution — full customer profiles are not maintained (Section 19.3).
@@ -2186,7 +2435,7 @@ Email/password + Google Sign-In auth, AI Setup Concierge, catalog management, QR
 | **Merchant of Record** | The legal entity responsible for a transaction in the eyes of the payment processor and regulators — for PayLink, this is PayLink itself, not the individual entrepreneur. |
 | **KYB (Know Your Business)** | The verification process a payment provider requires before granting merchant status — the specific process PayLink's aggregation model removes for individuals. |
 | **Firebase ID Token** | The short-lived, auto-refreshed session token Firebase Authentication issues on sign-in; PayLink's backend verifies it via the Admin SDK instead of maintaining its own JWT/refresh-token system. |
-| **Custom Claims** | Extra data (like a user's role) attached directly to a Firebase ID token via the Admin SDK, so the backend can check permissions without a separate database read on every request. |
+| **Access Code** | The first of two credentials (alongside a Password) used to log into the Admin side of PayLink — a mechanism entirely separate from merchant Firebase Authentication, since Admin has no public registration path (Section 24.4). |
 | **Store Capabilities** | The Surfboard API used to configure a sub-merchant's catalog and custom-invoice settings. |
 | **Multi Merchant Groups** | The Surfboard API used to create a new sub-merchant under PayLink's identity. |
 | **Make Your Payments** | The Surfboard API that executes the actual payment charge. |
