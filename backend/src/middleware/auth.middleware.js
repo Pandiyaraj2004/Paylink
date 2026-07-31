@@ -31,7 +31,7 @@ async function authMiddleware(req, res, next) {
       ...decodedToken,
     };
     return next();
-  } catch (err) {
+  } catch (_err) {
     return next(new AppError(401, 'INVALID_TOKEN', 'The provided Firebase ID token is invalid or expired.'));
   }
 }

@@ -58,7 +58,6 @@ export default function PublicStore() {
     if (payParam) setModalOpen(true);
     if (orderIdParam) setReceiptOrderId(orderIdParam);
     // Only re-evaluate when the URL itself changes, not on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payParam, orderIdParam]);
 
   const notFound =

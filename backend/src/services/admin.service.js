@@ -582,7 +582,6 @@ async function getMonitoring() {
     aiProviders: {
       openRouterConfigured: !!env.OPENROUTER_API_KEY,
       geminiConfigured: !!env.GEMINI_API_KEY,
-      anthropicConfigured: !!env.ANTHROPIC_API_KEY,
     },
     paymentSuccessRate24h: recentTerminalOrders.length > 0 ? Number((paidCount / recentTerminalOrders.length).toFixed(4)) : null,
     sampledOrders24h: recentTerminalOrders.length,

@@ -50,13 +50,14 @@ const env = {
   FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL || '',
   // Stored in .env with literal \n escapes (PEM newlines don't survive dotenv otherwise).
   FIREBASE_PRIVATE_KEY: (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
-  // AI provider (Phase 9): OpenRouter is tried first; Gemini is the fallback
-  // if OpenRouter is unconfigured or its call fails. ANTHROPIC_API_KEY stays
-  // supported as a last-resort legacy path in ai.service.js but is no longer
-  // the primary provider.
+  // AI provider: OpenRouter is tried first, Gemini is the fallback if
+  // OpenRouter is unconfigured or its call fails. Anthropic/Claude (an
+  // earlier session's original provider) was never actually integrated with
+  // real credentials in this project and has been removed entirely from
+  // ai.service.js — no env var for it either, so it can't silently linger
+  // as unreachable dead config.
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || '',
   GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
-  ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
   SURFBOARD_API_KEY: process.env.SURFBOARD_API_KEY || '',
   SURFBOARD_API_SECRET: process.env.SURFBOARD_API_SECRET || '',
   SURFBOARD_API_BASE_URL: process.env.SURFBOARD_API_BASE_URL || '',

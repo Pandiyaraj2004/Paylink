@@ -761,7 +761,7 @@ const REFUND_ELIGIBLE_STATUSES = ['paid', 'refunded', 'partially_refunded'];
  * here.
  */
 async function getMerchantTransactions(merchantId, uid, { from, to } = {}) {
-  const merchant = await getMerchant(merchantId, uid);
+  await getMerchant(merchantId, uid); // ownership check only — throws if uid doesn't own merchantId
 
   let fromDate = new Date(0);
   let toDate = new Date();

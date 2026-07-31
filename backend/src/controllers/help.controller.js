@@ -106,7 +106,7 @@ const HELP_ARTICLES = [
   },
 ];
 
-function listArticles(req, res, next) {
+function listArticles(req, res) {
   res.json({ articles: HELP_ARTICLES });
 }
 

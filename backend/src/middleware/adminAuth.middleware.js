@@ -38,7 +38,7 @@ function adminAuthMiddleware(req, res, next) {
     }
     req.admin = { role: 'admin', adminId: 'admin' };
     return next();
-  } catch (err) {
+  } catch (_err) {
     return next(new AppError(401, 'INVALID_TOKEN', 'The provided admin session token is invalid or expired.'));
   }
 }

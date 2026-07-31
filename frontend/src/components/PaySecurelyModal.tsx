@@ -95,7 +95,6 @@ export function PaySecurelyModal({
     setFailureMessage(null);
     setOrderId(null);
     setShowQr(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialProductId, initialQuantity, initialCustomAmount]);
 
   useEffect(() => {

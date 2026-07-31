@@ -76,7 +76,6 @@ export default function MonitoringTab() {
             <StatusPill ok={data?.surfboard.configured ? data?.surfboard.ok : undefined} label={data?.surfboard.configured ? 'Surfboard' : 'Surfboard (not configured)'} />
             <StatusPill ok={data?.aiProviders.openRouterConfigured} label="OpenRouter configured" />
             <StatusPill ok={data?.aiProviders.geminiConfigured} label="Gemini configured" />
-            <StatusPill ok={data?.aiProviders.anthropicConfigured} label="Anthropic (legacy) configured" />
           </div>
         )}
       </Card>

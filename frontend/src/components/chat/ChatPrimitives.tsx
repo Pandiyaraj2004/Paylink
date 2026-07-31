@@ -87,7 +87,6 @@ export function ChatBubble({
       if (i >= full.length) clearInterval(interval);
     }, 12);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [content, isUser, reduceMotion]);
 
   return (

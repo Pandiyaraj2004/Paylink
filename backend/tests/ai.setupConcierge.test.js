@@ -15,15 +15,14 @@ jest.mock('../src/config/firebase', () => {
 
 // config/env.js is a singleton computed once at require-time from real
 // .env/.env.local — deleting process.env.* in beforeEach has no effect on
-// its already-cached values (Phase 9: this now includes real
-// OPENROUTER_API_KEY/GEMINI_API_KEY, not just ANTHROPIC_API_KEY). Mock the
-// module directly so this test genuinely exercises the "no AI provider
-// configured" path instead of making a real network call.
+// its already-cached values. Mock the module directly so this test
+// genuinely exercises the "no AI provider configured" path instead of
+// making a real network call. (Anthropic was removed entirely — OpenRouter
+// and Gemini are the only two providers left to blank out.)
 jest.mock('../src/config/env', () => ({
   ...jest.requireActual('../src/config/env'),
   OPENROUTER_API_KEY: '',
   GEMINI_API_KEY: '',
-  ANTHROPIC_API_KEY: '',
 }));
 
 const firebaseConfig = require('../src/config/firebase');

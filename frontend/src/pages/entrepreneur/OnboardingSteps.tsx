@@ -471,12 +471,10 @@ export function ConfirmStep({
   wizard,
   publishing,
   published,
-  onPublish,
 }: {
   wizard: BaseWizardState;
   publishing: boolean;
   published: boolean;
-  onPublish: () => void;
 }) {
   if (published) {
     return (

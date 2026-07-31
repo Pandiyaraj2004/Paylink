@@ -20,7 +20,7 @@ app.listen(env.PORT, () => {
 if (!env.ADMIN_ACCESS_CODE || !env.ADMIN_PASSWORD || !env.ADMIN_JWT_SECRET) {
   // eslint-disable-next-line no-console
   console.warn(
-    '[admin-auth] ADMIN_ACCESS_CODE/ADMIN_PASSWORD/ADMIN_JWT_SECRET not fully configured — POST /api/auth/admin-login and every /api/admin/* route will respond 503 until all three are set (see backend/.env.example, master-doc.md Section 24.4).'
+    '[admin-auth] ADMIN_ACCESS_CODE/ADMIN_PASSWORD/ADMIN_JWT_SECRET not fully configured — POST /api/auth/admin-login and every /api/admin/* route will respond 503 until all three are set (see root .env.example, master-doc.md Section 24.4).'
   );
 }
 

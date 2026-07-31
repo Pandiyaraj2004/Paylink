@@ -184,7 +184,10 @@ function buildSurfboardCustomer(order) {
  * (processSurfboardWebhookEvent below) once the customer completes (or
  * abandons) checkout on Surfboard's own page.
  */
-async function createPayment({ orderId, method, paymentDetails }) {
+// paymentDetails is accepted for API-shape symmetry but never read — no real
+// card/Swish capture form exists to collect it against (Surfboard's hosted
+// payment page owns that step); see frontend/src/api/payments.ts's type comment.
+async function createPayment({ orderId, method, paymentDetails: _paymentDetails }) {
   if (!orderId || typeof orderId !== 'string') {
     throw new AppError(400, 'VALIDATION_ERROR', 'orderId is required.');
   }
@@ -232,7 +235,7 @@ async function createPayment({ orderId, method, paymentDetails }) {
   let surfboardMethod;
   try {
     surfboardMethod = surfboardService.mapPaymentMethod(method);
-  } catch (err) {
+  } catch (_err) {
     // 'wallet' (or any future method the frontend offers before Surfboard
     // documents a matching paymentMethod) has no real mapping — a clean,
     // honest 400 rather than attempting a call Surfboard would reject.
@@ -242,7 +245,7 @@ async function createPayment({ orderId, method, paymentDetails }) {
   let numericCurrency;
   try {
     numericCurrency = surfboardService.toNumericCurrency(order.currency);
-  } catch (err) {
+  } catch (_err) {
     throw new AppError(400, 'VALIDATION_ERROR', `The "${order.currency}" currency is not yet supported by the payment provider.`);
   }
 

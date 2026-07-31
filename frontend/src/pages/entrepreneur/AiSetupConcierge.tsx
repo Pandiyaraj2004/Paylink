@@ -83,7 +83,7 @@ const CLARIFY_TIMEOUT_MS = 2 * 60 * 1000;
 export default function AiSetupConcierge() {
   const navigate = useNavigate();
   const { merchantId } = useAuth();
-  const { merchant, refetch } = useMerchant();
+  const { refetch } = useMerchant();
   const [stepIndex, setStepIndex] = useState(0);
   const [direction, setDirection] = useState(1);
   const [publishing, setPublishing] = useState(false);
@@ -276,7 +276,7 @@ export default function AiSetupConcierge() {
                 />
               )}
               {step === 'confirm' && (
-                <ConfirmStep wizard={wizard} publishing={publishing} published={published} onPublish={handlePublish} />
+                <ConfirmStep wizard={wizard} publishing={publishing} published={published} />
               )}
             </motion.div>
           </AnimatePresence>

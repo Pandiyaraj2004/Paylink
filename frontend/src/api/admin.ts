@@ -240,7 +240,6 @@ export interface MonitoringResponse {
   aiProviders: {
     openRouterConfigured: boolean;
     geminiConfigured: boolean;
-    anthropicConfigured: boolean;
   };
   paymentSuccessRate24h: number | null;
   sampledOrders24h: number;

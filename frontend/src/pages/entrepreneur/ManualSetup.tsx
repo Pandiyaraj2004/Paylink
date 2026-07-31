@@ -73,7 +73,7 @@ type WizardState = BaseWizardState;
 export default function ManualSetup() {
   const navigate = useNavigate();
   const { merchantId } = useAuth();
-  const { merchant, refetch } = useMerchant();
+  const { refetch } = useMerchant();
   const [stepIndex, setStepIndex] = useState(0);
   const [direction, setDirection] = useState(1);
   const [publishing, setPublishing] = useState(false);
@@ -247,7 +247,7 @@ export default function ManualSetup() {
               )}
               {step === 'preview' && <PreviewStep wizard={wizard} />}
               {step === 'confirm' && (
-                <ConfirmStep wizard={wizard} publishing={publishing} published={published} onPublish={handlePublish} />
+                <ConfirmStep wizard={wizard} publishing={publishing} published={published} />
               )}
             </motion.div>
           </AnimatePresence>
