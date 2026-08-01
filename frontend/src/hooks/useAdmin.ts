@@ -6,6 +6,7 @@ import {
   reactivateMerchant,
   approveMerchant,
   rejectMerchant,
+  deleteMerchant,
   getAdminReports,
   getAdminAnalytics,
   getAdminRefunds,
@@ -69,8 +70,15 @@ export function useMerchantActions() {
     mutationFn: ({ id, reason }: { id: string; reason: string }) => rejectMerchant(id, reason),
     onSuccess: invalidate,
   });
+  // Irreversible — see api/admin.ts's deleteMerchant. Shares the same
+  // invalidation as the other actions since it also changes the merchant
+  // list and Dashboard's active-merchant count.
+  const remove = useMutation({
+    mutationFn: (id: string) => deleteMerchant(id),
+    onSuccess: invalidate,
+  });
 
-  return { suspend, reactivate, approve, reject };
+  return { suspend, reactivate, approve, reject, remove };
 }
 
 /** GET /api/admin/reports (Section 16.3 Reports tab). */

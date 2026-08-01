@@ -1,6 +1,7 @@
 const adminRepository = require('../repositories/admin.repository');
 const merchantRepository = require('../repositories/merchant.repository');
 const disputeRepository = require('../repositories/dispute.repository');
+const orderRepository = require('../repositories/order.repository');
 const notificationService = require('./notification.service');
 const AppError = require('../utils/AppError');
 const { serializeTimestamp } = require('../utils/serializeTimestamp');
@@ -255,6 +256,60 @@ async function rejectMerchant(merchantId, adminUid, reason) {
     notes: reason.trim(),
   });
   return { status: updated.status };
+}
+
+/**
+ * DELETE /api/admin/merchants/:id — new, genuinely destructive and
+ * irreversible: permanently removes this merchant's document plus every
+ * piece of Firestore data tied to it (adminRepository.deleteMerchantData —
+ * see that function's own comment for the exact list). Deliberately does
+ * NOT touch the owning Firebase Auth account/`users/{userId}` doc — the
+ * entrepreneur's login survives; they'd simply land back at onboarding with
+ * a clean slate if they signed in again.
+ *
+ * Guard: only a merchant that has NEVER taken a real payment (no order ever
+ * reached `paid`/`partially_refunded`/`refunded` — REVENUE_ORDER_STATUSES,
+ * the same definition Reports/Analytics/the Payout module already share)
+ * may be hard-deleted. A merchant with real transaction history must be
+ * handled via Suspend instead, which disables checkout while explicitly
+ * preserving historical/financial records — this project's existing,
+ * documented posture (master-doc.md's own FAQ: "historical data is
+ * preserved, not deleted" on suspension). This keeps Delete a safe
+ * test-data/cleanup tool rather than a way to erase real financial records.
+ */
+async function deleteMerchant(merchantId, adminUid) {
+  const merchant = await getMerchantOr404(merchantId);
+
+  const orders = await orderRepository.getAllOrders(merchantId);
+  const hasRealPaymentHistory = orders.some((o) => REVENUE_ORDER_STATUSES.includes(o.status));
+  if (hasRealPaymentHistory) {
+    throw new AppError(
+      409,
+      'CONFLICT',
+      'This merchant has real payment history and cannot be permanently deleted — use Suspend instead to disable their store while preserving financial records.'
+    );
+  }
+
+  // Captured before the delete, since the merchant document itself won't
+  // exist to reference afterward — this is what makes the audit-trail entry
+  // below actually meaningful rather than just a dangling targetId.
+  const auditSummary = {
+    businessName: merchant.businessName || null,
+    category: merchant.category || null,
+    pageSlug: merchant.pageSlug || null,
+    orderCount: orders.length,
+  };
+
+  const result = await adminRepository.deleteMerchantData(merchant);
+
+  await adminRepository.createAdminAction({
+    adminId: adminUid,
+    actionType: 'merchant.deleted',
+    targetId: merchantId,
+    notes: JSON.stringify(auditSummary),
+  });
+
+  return { status: 'deleted', merchantId, ...result };
 }
 
 /* ------------------------------------------------------------------------ */
@@ -669,6 +724,7 @@ module.exports = {
   reactivateMerchant,
   approveMerchant,
   rejectMerchant,
+  deleteMerchant,
   getReports,
   getAnalytics,
   getRefunds,

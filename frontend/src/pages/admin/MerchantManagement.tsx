@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { Search, ShieldOff, ShieldCheck, CheckCircle2, XCircle, Store } from 'lucide-react';
+import { Search, ShieldOff, ShieldCheck, CheckCircle2, XCircle, Store, Trash2 } from 'lucide-react';
 import { AdminShell } from '@/components/AdminShell';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
@@ -45,7 +45,18 @@ function MerchantStatusBadge({ status }: { status: string }) {
   );
 }
 
-type ActionMode = 'suspend' | 'reject' | null;
+type ActionMode = 'suspend' | 'reject' | 'delete' | null;
+
+/**
+ * The exact phrase the admin must type to confirm a permanent delete. Never
+ * an empty string — a merchant with no `businessName` set (shows as
+ * "Untitled store" in the table via the same fallback) would otherwise let
+ * the confirm check trivially pass by typing nothing at all, defeating the
+ * whole point of a type-to-confirm safeguard.
+ */
+function deleteConfirmPhraseFor(merchant: Merchant | null): string {
+  return merchant?.businessName?.trim() || 'DELETE';
+}
 
 /**
  * Merchant Management (master-doc.md Section 16.2) — post-Deviation-1, this
@@ -70,12 +81,13 @@ export default function MerchantManagement() {
   const [selected, setSelected] = useState<Merchant | null>(null);
   const [actionMode, setActionMode] = useState<ActionMode>(null);
   const [actionText, setActionText] = useState('');
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
   const { data, isLoading, isError, refetch } = useAdminMerchants({
     status: statusFilter === 'all' ? undefined : statusFilter,
     pageSize: 100,
   });
-  const { suspend, reactivate, approve, reject } = useMerchantActions();
+  const { suspend, reactivate, approve, reject, remove } = useMerchantActions();
 
   const merchants = data?.items ?? [];
   const filtered = useMemo(
@@ -91,6 +103,7 @@ export default function MerchantManagement() {
   const closeAction = () => {
     setActionMode(null);
     setActionText('');
+    setDeleteConfirmText('');
   };
 
   const handleSuspendConfirm = async () => {
@@ -138,6 +151,19 @@ export default function MerchantManagement() {
     } catch (err) {
       const { message } = getApiError(err);
       toast.error(message || 'Could not update this merchant. Please try again.');
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!selected || deleteConfirmText.trim() !== deleteConfirmPhraseFor(selected)) return;
+    try {
+      await remove.mutateAsync(selected.id);
+      toast.success(`${selected.businessName || 'Merchant'} and all of its data have been permanently deleted.`);
+      closeAction();
+      setSelected(null);
+    } catch (err) {
+      const { message } = getApiError(err);
+      toast.error(message || 'Could not delete this merchant. Please try again.');
     }
   };
 
@@ -275,6 +301,20 @@ export default function MerchantManagement() {
                 <XCircle className="h-4 w-4" /> Reject
               </Button>
             </div>
+
+            {/* Delete — separated from the actions above with its own
+                divider: irreversible and far more severe than Suspend/Reject,
+                which only change status and always preserve the underlying
+                data. */}
+            <div className="border-t border-border pt-4">
+              <Button variant="ghost" className="text-danger hover:bg-danger/10" onClick={() => setActionMode('delete')}>
+                <Trash2 className="h-4 w-4" /> Delete permanently
+              </Button>
+              <p className="mt-1.5 text-caption text-text-secondary">
+                Only available for a merchant that has never taken a real payment. For anything with order history, use
+                Suspend instead.
+              </p>
+            </div>
           </div>
         )}
       </Modal>
@@ -326,6 +366,46 @@ export default function MerchantManagement() {
             </Button>
             <Button variant="danger" loading={reject.isPending} disabled={!actionText.trim()} onClick={handleRejectConfirm}>
               Reject
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Delete confirmation — irreversible, so it needs more friction than a
+          single click: the admin must type the exact business name, the same
+          type-to-confirm pattern used for destructive actions elsewhere
+          (e.g. GitHub repo deletion). Backend still independently refuses
+          this for any merchant with real payment history (409 CONFLICT). */}
+      <Modal open={actionMode === 'delete'} onOpenChange={(open) => !open && closeAction()} title="Delete merchant permanently">
+        <div className="flex flex-col gap-4">
+          <p className="text-body-m text-text-secondary">
+            This permanently deletes <strong>{selected?.businessName || 'this store'}</strong> and every piece of data
+            tied to it — products, orders, refunds, gallery, bank details, payouts, disputes.{' '}
+            <strong>This cannot be undone.</strong> Their login is not affected; they'd simply land back at onboarding
+            with a clean slate if they signed in again.
+          </p>
+          <div>
+            <label className="mb-1.5 block text-caption font-medium text-text-secondary">
+              Type <strong className="text-text-primary">{deleteConfirmPhraseFor(selected)}</strong> to confirm
+            </label>
+            <input
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder={deleteConfirmPhraseFor(selected)}
+              className="w-full rounded-sm border border-border bg-surface px-3 py-2.5 text-body-m text-text-primary placeholder:text-text-secondary/50 focus:outline-none focus:ring-2 focus:ring-danger"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={closeAction}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              loading={remove.isPending}
+              disabled={deleteConfirmText.trim() !== deleteConfirmPhraseFor(selected)}
+              onClick={handleDeleteConfirm}
+            >
+              <Trash2 className="h-4 w-4" /> Delete permanently
             </Button>
           </div>
         </div>

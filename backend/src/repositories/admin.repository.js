@@ -43,6 +43,93 @@ function platformSettingsRef() {
 }
 
 /**
+ * Firestore batch writes cap out at 500 operations — chunk any delete list
+ * larger than that into multiple sequential commits rather than one that
+ * would simply fail. Test/demo merchants are nowhere near this size today;
+ * this is a correctness safeguard, not a scale optimization.
+ */
+const BATCH_CHUNK_SIZE = 400;
+
+async function commitInChunks(database, refs) {
+  for (let i = 0; i < refs.length; i += BATCH_CHUNK_SIZE) {
+    const batch = database.batch();
+    refs.slice(i, i + BATCH_CHUNK_SIZE).forEach((ref) => batch.delete(ref));
+    // eslint-disable-next-line no-await-in-loop
+    await batch.commit();
+  }
+}
+
+/**
+ * The cascade behind DELETE /api/admin/merchants/:id (admin.service.js's
+ * deleteMerchant — see that file for the "zero real paid orders" guard this
+ * is only ever called after). Removes every piece of Firestore data this
+ * merchant's own working code paths ever write, across every collection
+ * that references it:
+ *
+ *   - merchants/{id}/products, /gallery, /payout/details, /orders (each
+ *     with its own /refunds subcollection), plus each order's `ordersIndex`
+ *     lookup entry (order.repository.js's own index collection)
+ *   - payoutBatches + payoutCursors/{id} (Payout & Settlement Management)
+ *   - disputes filed against this merchant
+ *   - pageSlugs/{slug} (frees the slug for reuse)
+ *   - users/{userId}/notifications (this store's notification history) —
+ *     NOT users/{userId} itself: per this feature's explicit scope, deleting
+ *     a merchant never touches the owning Firebase Auth account or its user
+ *     doc, only this merchant's own data.
+ *   - the merchants/{id} document itself, last.
+ *
+ * Deliberately does NOT touch `paymentsIndex` (nothing in this codebase
+ * actually ever writes to that collection — `createPaymentIndex` is defined
+ * and exported but has no real call site — so there is never anything there
+ * to clean up) or `processedWebhookEvents` (pure eventId-keyed idempotency
+ * markers with no merchant-identifying content, harmless to leave behind).
+ */
+async function deleteMerchantData(merchant) {
+  const database = db();
+  const merchantId = merchant.id;
+  const merchantRef = merchantsCollection().doc(merchantId);
+  const refs = [];
+
+  const productsSnap = await merchantRef.collection('products').get();
+  productsSnap.docs.forEach((doc) => refs.push(doc.ref));
+
+  const ordersSnap = await merchantRef.collection('orders').get();
+  for (const orderDoc of ordersSnap.docs) {
+    // eslint-disable-next-line no-await-in-loop
+    const refundsSnap = await orderDoc.ref.collection('refunds').get();
+    refundsSnap.docs.forEach((doc) => refs.push(doc.ref));
+    refs.push(orderDoc.ref);
+    refs.push(db().collection('ordersIndex').doc(orderDoc.id));
+  }
+
+  const gallerySnap = await merchantRef.collection('gallery').get();
+  gallerySnap.docs.forEach((doc) => refs.push(doc.ref));
+
+  refs.push(merchantRef.collection('payout').doc('details'));
+
+  const payoutBatchesSnap = await db().collection('payoutBatches').where('merchantId', '==', merchantId).get();
+  payoutBatchesSnap.docs.forEach((doc) => refs.push(doc.ref));
+  refs.push(db().collection('payoutCursors').doc(merchantId));
+
+  const disputesSnap = await db().collection('disputes').where('merchantId', '==', merchantId).get();
+  disputesSnap.docs.forEach((doc) => refs.push(doc.ref));
+
+  if (merchant.userId) {
+    const notificationsSnap = await db().collection('users').doc(merchant.userId).collection('notifications').get();
+    notificationsSnap.docs.forEach((doc) => refs.push(doc.ref));
+  }
+
+  if (merchant.pageSlug) {
+    refs.push(db().collection('pageSlugs').doc(merchant.pageSlug));
+  }
+
+  refs.push(merchantRef);
+
+  await commitInChunks(database, refs);
+  return { deletedDocCount: refs.length };
+}
+
+/**
  * GET /api/admin/merchants (master-doc.md Section 22.9). Only `status` is
  * server-side filtered — 22.9 documents no `category`/signup-date query
  * params for this endpoint (16.2's "filterable... by category, signup
@@ -173,6 +260,7 @@ module.exports = {
   countRecentMerchants,
   getAllOrdersAcrossMerchants,
   getAllRefundsAcrossMerchants,
+  deleteMerchantData,
   createAdminAction,
   listAdminActions,
   getPlatformSettings,

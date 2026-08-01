@@ -69,6 +69,16 @@ async function rejectMerchant(req, res, next) {
   }
 }
 
+/** DELETE /api/admin/merchants/:id — permanently deletes a merchant with no real payment history. */
+async function deleteMerchant(req, res, next) {
+  try {
+    const result = await adminService.deleteMerchant(req.params.id, req.admin.adminId);
+    return res.status(200).json(result);
+  } catch (err) {
+    return next(err);
+  }
+}
+
 async function getReports(req, res, next) {
   try {
     const { from, to, category, region } = req.query || {};
@@ -166,6 +176,7 @@ module.exports = {
   reactivateMerchant,
   approveMerchant,
   rejectMerchant,
+  deleteMerchant,
   getReports,
   getAnalytics,
   getRefunds,

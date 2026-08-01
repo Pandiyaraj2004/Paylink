@@ -15,10 +15,22 @@ jest.mock('../src/repositories/admin.repository', () => ({
   countRecentMerchants: jest.fn(),
   getAllOrdersAcrossMerchants: jest.fn(),
   getAllRefundsAcrossMerchants: jest.fn(),
+  deleteMerchantData: jest.fn(),
   createAdminAction: jest.fn().mockResolvedValue({ id: 'action-1' }),
   listAdminActions: jest.fn(),
   getPlatformSettings: jest.fn(),
   updatePlatformSettings: jest.fn(),
+}));
+
+jest.mock('../src/repositories/order.repository', () => ({
+  getAllOrders: jest.fn(),
+  resolveMerchantIdForOrder: jest.fn(),
+  createOrder: jest.fn(),
+  getOrderById: jest.fn(),
+  updateOrder: jest.fn(),
+  listOrders: jest.fn(),
+  getOrdersInRange: jest.fn(),
+  getOrderCountForMerchant: jest.fn(),
 }));
 
 // Phase 13 (Section 27, Deviation 1): suspendMerchant now also fires a
@@ -31,6 +43,7 @@ jest.mock('../src/services/notification.service', () => ({
 
 const merchantRepository = require('../src/repositories/merchant.repository');
 const adminRepository = require('../src/repositories/admin.repository');
+const orderRepository = require('../src/repositories/order.repository');
 const notificationService = require('../src/services/notification.service');
 const app = require('../src/app');
 
@@ -224,6 +237,91 @@ describe('Admin Merchant Management actions (master-doc.md Section 16.2)', () =>
       expect(adminRepository.createAdminAction).toHaveBeenCalledWith(
         expect.objectContaining({ actionType: 'merchant.rejected', notes: 'Confirmed policy violation.' })
       );
+    });
+  });
+
+  describe('DELETE /api/admin/merchants/:id (new — genuinely destructive, no undo)', () => {
+    it('returns 404 MERCHANT_NOT_FOUND for an unknown merchant', async () => {
+      merchantRepository.getMerchantById.mockResolvedValue(null);
+
+      const res = await request(app).delete('/api/admin/merchants/does-not-exist').set('Authorization', ADMIN_AUTH_HEADER);
+
+      expect(res.status).toBe(404);
+      expect(adminRepository.deleteMerchantData).not.toHaveBeenCalled();
+    });
+
+    it('refuses to delete a merchant that has ever taken a real payment, pointing at Suspend instead', async () => {
+      merchantRepository.getMerchantById.mockResolvedValue({ id: 'm1', businessName: 'Acme', userId: 'u1' });
+      orderRepository.getAllOrders.mockResolvedValue([
+        { id: 'o1', status: 'pending' },
+        { id: 'o2', status: 'paid' },
+      ]);
+
+      const res = await request(app).delete('/api/admin/merchants/m1').set('Authorization', ADMIN_AUTH_HEADER);
+
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe('CONFLICT');
+      expect(adminRepository.deleteMerchantData).not.toHaveBeenCalled();
+    });
+
+    it('refuses to delete a merchant with a partially_refunded or refunded order too, not just paid', async () => {
+      merchantRepository.getMerchantById.mockResolvedValue({ id: 'm1', businessName: 'Acme', userId: 'u1' });
+      orderRepository.getAllOrders.mockResolvedValue([{ id: 'o1', status: 'refunded' }]);
+
+      const res = await request(app).delete('/api/admin/merchants/m1').set('Authorization', ADMIN_AUTH_HEADER);
+
+      expect(res.status).toBe(409);
+      expect(adminRepository.deleteMerchantData).not.toHaveBeenCalled();
+    });
+
+    it('permanently deletes a merchant with zero real paid orders, and logs a self-contained audit entry', async () => {
+      merchantRepository.getMerchantById.mockResolvedValue({
+        id: 'm1',
+        businessName: 'Test Shop',
+        category: 'Other',
+        pageSlug: 'test-shop',
+        userId: 'u1',
+      });
+      orderRepository.getAllOrders.mockResolvedValue([
+        { id: 'o1', status: 'pending' },
+        { id: 'o2', status: 'failed' },
+      ]);
+      adminRepository.deleteMerchantData.mockResolvedValue({ deletedDocCount: 7 });
+
+      const res = await request(app).delete('/api/admin/merchants/m1').set('Authorization', ADMIN_AUTH_HEADER);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ status: 'deleted', merchantId: 'm1', deletedDocCount: 7 });
+      expect(adminRepository.deleteMerchantData).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'm1', businessName: 'Test Shop' })
+      );
+      expect(adminRepository.createAdminAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          adminId: 'admin',
+          actionType: 'merchant.deleted',
+          targetId: 'm1',
+          notes: expect.stringContaining('Test Shop'),
+        })
+      );
+      // The audit note must stand on its own — the merchant doc is gone.
+      const auditCall = adminRepository.createAdminAction.mock.calls.find(([c]) => c.actionType === 'merchant.deleted');
+      expect(JSON.parse(auditCall[0].notes)).toEqual({
+        businessName: 'Test Shop',
+        category: 'Other',
+        pageSlug: 'test-shop',
+        orderCount: 2,
+      });
+    });
+
+    it('allows deleting a merchant with zero orders at all', async () => {
+      merchantRepository.getMerchantById.mockResolvedValue({ id: 'm1', businessName: 'Empty Shop', userId: 'u1' });
+      orderRepository.getAllOrders.mockResolvedValue([]);
+      adminRepository.deleteMerchantData.mockResolvedValue({ deletedDocCount: 1 });
+
+      const res = await request(app).delete('/api/admin/merchants/m1').set('Authorization', ADMIN_AUTH_HEADER);
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('deleted');
     });
   });
 });

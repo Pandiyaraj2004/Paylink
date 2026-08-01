@@ -18,13 +18,41 @@ import {
   ShoppingBag,
   MessageCircle,
   Building2,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
 import { cn } from '@/utils/cn';
+import { useTheme } from '@/hooks/useTheme';
 import type { PublicPage, Product } from '@/api/merchants';
 import type { PurchaseRecord } from '@/utils/purchaseSession';
+
+/**
+ * A theme toggle styled for the hero's fixed-dark brand chrome (matches the
+ * WhatsApp/Call Us/Share pill buttons in the same row) rather than the
+ * shared `ThemeToggle` component, which assumes a theme-reactive
+ * surface/border — those tokens would look wrong against this
+ * deliberately-always-dark banner. Everything below the hero (About,
+ * Products, Contact, Reviews, the whole page background) already uses
+ * theme tokens and re-themes correctly the moment this is toggled; only the
+ * hero and footer keep their fixed dark accent, the same "branded checkout
+ * chrome" posture Stripe/Linear-style pages use.
+ */
+function StorefrontThemeToggle() {
+  const { theme, toggleTheme } = useTheme();
+  return (
+    <button
+      type="button"
+      aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+      onClick={toggleTheme}
+      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 bg-white/5 text-white hover:bg-white/10 transition-all"
+    >
+      {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+    </button>
+  );
+}
 
 /** Small icon + all-caps tracked label, used above every major storefront section heading. */
 function SectionEyebrow({ icon: Icon, label }: { icon: ComponentType<{ className?: string }>; label: string }) {
@@ -271,6 +299,7 @@ export function PublicStoreView({
               <Share2 className="h-3.5 w-3.5" />
               Share
             </button>
+            <StorefrontThemeToggle />
           </div>
         </div>
       </div>

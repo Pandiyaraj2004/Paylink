@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Frown } from 'lucide-react';
 import { Skeleton } from '@/components/Skeleton';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { PublicStoreView, type StoreSelection } from '@/components/PublicStoreView';
 import { SingleProductBackdrop } from '@/components/SingleProductBackdrop';
 import { PaySecurelyModal } from '@/components/PaySecurelyModal';
@@ -183,12 +184,22 @@ export default function PublicStore() {
   return (
     <div className="min-h-screen bg-bg px-4 py-10 sm:px-6">
       {isDirectLink ? (
-        <SingleProductBackdrop
-          page={page}
-          product={page.items.find((i) => i.id === initialProductId) ?? null}
-          quantity={initialQuantity && initialQuantity > 0 ? initialQuantity : 1}
-          customAmount={initialCustomAmount}
-        />
+        <>
+          {/* The full storefront's own hero carries a theme toggle styled for
+              its fixed-dark chrome (PublicStoreView.tsx) — this minimal
+              single-product page has no such header to attach one to, so it
+              gets its own, using the shared theme-reactive ThemeToggle since
+              this page's background already re-themes normally. */}
+          <div className="mx-auto flex w-full max-w-md justify-end">
+            <ThemeToggle />
+          </div>
+          <SingleProductBackdrop
+            page={page}
+            product={page.items.find((i) => i.id === initialProductId) ?? null}
+            quantity={initialQuantity && initialQuantity > 0 ? initialQuantity : 1}
+            customAmount={initialCustomAmount}
+          />
+        </>
       ) : (
         <PublicStoreView
           page={page}

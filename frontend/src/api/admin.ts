@@ -82,6 +82,24 @@ export async function rejectMerchant(id: string, reason: string): Promise<Mercha
   return data;
 }
 
+/**
+ * DELETE /api/admin/merchants/:id (new) — permanently deletes a merchant and
+ * every piece of Firestore data tied to it. Irreversible. The backend
+ * refuses (409 CONFLICT) any merchant that has ever taken a real payment —
+ * Suspend is the correct action for those. Never touches the entrepreneur's
+ * Firebase Auth login.
+ */
+export interface DeleteMerchantResponse {
+  status: 'deleted';
+  merchantId: string;
+  deletedDocCount: number;
+}
+
+export async function deleteMerchant(id: string): Promise<DeleteMerchantResponse> {
+  const { data } = await apiClient.delete<DeleteMerchantResponse>(`/admin/merchants/${id}`);
+  return data;
+}
+
 /* -------------------------------------------------------------------- */
 /* 16.3 Reports & Analytics                                              */
 /* -------------------------------------------------------------------- */

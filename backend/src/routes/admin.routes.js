@@ -22,6 +22,12 @@ router.post('/merchants/:id/approve', adminController.approveMerchant);
 router.post('/merchants/:id/reject', adminController.rejectMerchant);
 router.post('/merchants/:id/suspend', adminController.suspendMerchant);
 router.post('/merchants/:id/reactivate', adminController.reactivateMerchant);
+// Genuinely destructive and irreversible (see admin.service.js's
+// deleteMerchant for the "no real payment history" guard) — deliberately
+// its own explicit DELETE verb/route rather than another /:id/action POST,
+// so it reads unambiguously in logs and can never be triggered by the same
+// kind of accidental double-click a POST action button risks.
+router.delete('/merchants/:id', adminController.deleteMerchant);
 
 // 16.3 Reports & Analytics
 router.get('/reports', adminController.getReports);
