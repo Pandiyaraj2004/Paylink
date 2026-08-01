@@ -63,7 +63,10 @@ export default function Dashboard() {
         />
         <div className="relative z-10 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="font-display text-h1 font-semibold gradient-text">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
+              Merchant Portal
+            </span>
+            <h1 className="mt-2 font-display text-h1 font-semibold gradient-text">
               {merchantLoading ? 'Welcome back' : `Welcome back, ${merchant?.businessName ?? 'there'}`}
             </h1>
             <p className="mt-1 text-body-m text-text-secondary">Here's how your store is doing.</p>
@@ -85,6 +88,19 @@ export default function Dashboard() {
             </button>
           )}
         </div>
+
+        {merchant && (
+          <div className="relative z-10 mt-6 grid grid-cols-2 gap-4 border-t border-border/60 pt-5 sm:grid-cols-4">
+            <InfoStripItem label="Business Name" value={merchant.businessName || '—'} />
+            <InfoStripItem label="Category" value={merchant.category || '—'} />
+            <InfoStripItem label="Store Slug" value={merchant.pageSlug || '—'} />
+            <InfoStripItem
+              label="Account Status"
+              value={merchant.status?.replace('_', ' ') || '—'}
+              valueClassName="capitalize text-secondary-fill"
+            />
+          </div>
+        )}
       </section>
 
       {/* Summary cards */}
@@ -119,6 +135,15 @@ export default function Dashboard() {
 }
 
 /* ---------------------------------------------------------------------- */
+
+function InfoStripItem({ label, value, valueClassName }: { label: string; value: string; valueClassName?: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-caption text-text-secondary">{label}</p>
+      <p className={cn('truncate text-body-m font-semibold text-text-primary', valueClassName)}>{value}</p>
+    </div>
+  );
+}
 
 function RecentOrders({
   orders,

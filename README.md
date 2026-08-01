@@ -107,8 +107,8 @@ The single consolidated `.env` file at the root folder contains all configuratio
 | `/app/products` | Products | Catalog management + a Preview & Share tab (copy link / QR / poster for the *whole store*) |
 | `/app/orders` | Orders | Orders + Refunds tabs |
 | `/app/payments` | Payments | Raw payment/refund ledger with Surfboard reference IDs, CSV export |
-| `/app/payment-links` | Payment Links | Generate a link for one specific product or a custom amount, share via copy or WhatsApp |
-| `/app/qr-payments` | QR Payments | Same as above, as a downloadable QR code |
+| `/app/payment-links` | Payment Links | Generate a link for one specific product or a custom amount, share via copy or one-tap WhatsApp |
+| `/app/qr-payments` | QR Payments | Same generator, rendered as a downloadable QR code — also has its own one-tap "Share via WhatsApp" button (sends the same underlying link the QR encodes) |
 | `/app/customers` | Customers | Repeat customers (2+ orders) only — not a full CRM |
 | `/app/analytics` | Analytics | The full AI Earnings Assistant chat + revenue chart + top products |
 | `/app/reviews` | Reviews | Star ratings + written reviews customers have left |
@@ -120,6 +120,7 @@ The single consolidated `.env` file at the root folder contains all configuratio
 | Route | Page |
 |---|---|
 | `/pay/:slug` | The merchant's live storefront — browsing + the "Pay Securely" checkout modal happen on this one page, never a separate checkout route |
+| `/pay/:slug?pay={productId}` (or `?pay=custom&amount=`) | **Single Product Checkout** — a merchant-generated link/QR from Payment Links or QR Payments. Instead of the full storefront, the customer sees only that one product (or fixed custom amount) and a locked checkout form — no dropdown to switch items, no way to browse the rest of the catalog. See [Section 5](#5-end-to-end-flow) and [Section 9](#9-single-product-checkout-and-order-integrity) for the full behavior. |
 | `/pay/:slug/receipt/:orderId` | Post-payment success/receipt page — downloadable/printable receipt, star rating prompt |
 | `/pay/:slug/support` | Public customer support page |
 
@@ -180,7 +181,7 @@ Concrete input → expected output for each major flow. Run these against a real
 | 1 | Register a new account at `/register` with a real email + password | Redirected into `/app/setup` (not `/app/dashboard`) — merchant is `pending_setup` |
 | 2 | On `/app/setup`, choose **"Set up with AI"**, describe a business (e.g. "I sell handmade candles, prices around 15-30 SEK") | AI drafts a catalog + tagline; confirm → products created, merchant flips to `active` |
 | 3 | After publishing (either path), wait for the "You're live!" animation | Redirected to `/app/onboarding/preview`, showing the *real* `/pay/:slug` storefront with your catalog |
-| 4 | Click **Continue to Dashboard** | Lands on `/app/dashboard`; sidebar now shows all 14 nav items |
+| 4 | Click **Continue to Dashboard** | Lands on `/app/dashboard`; sidebar now shows all 12 nav items |
 | 5 | Go to **Profile**, edit Description + Address (city/country) + Phone, click **Save changes** | Success toast; open `/pay/:slug` in a new tab → the same details are live immediately, no publish step |
 | 6 | Go to **Settings → Bank Details**, fill in bank name/account holder/account number/IFSC/account type/currency, Save | Reload the tab → account number shows masked (e.g. `••••1234`), `completed: true` |
 | 7 | Go to **Payment Links**, select one product, click **Copy Link** | Clipboard contains `http://localhost:5173/pay/<slug>?pay=<productId>` |
@@ -189,12 +190,17 @@ Concrete input → expected output for each major flow. Run these against a real
 | 10 | On the storefront, complete checkout with a Surfboard demo card | Redirected to Surfboard's hosted page, then back to `/pay/:slug/receipt/:orderId` showing a success card with merchant name, amount, transaction ID, order ID, date |
 | 11 | On the receipt page, submit a 4-star rating with a comment | Toast confirms; reload the merchant's **Reviews** page → the review appears with the correct star count, comment, and order link; reload the storefront → "Customer reviews" section shows it (without any customer name) |
 | 12 | Repeat checkout as the *same* phone number a second time | Go to **Customers** → that phone number now appears with `orderCount: 2` and a real `totalSpent` |
-| 13 | Click that customer row | Navigates to `/app/orders?customer=<ref>` with a "Showing orders for this customer only" banner — **requires the composite index in Section 9 below to be deployed first**, otherwise this (and the Orders page's status filter dropdown) will show a friendly "Could not load your orders" error instead of the filtered list |
+| 13 | Click that customer row | Navigates to `/app/orders?customer=<ref>` with a "Showing orders for this customer only" banner — **requires the composite index in Section 11 below to be deployed first**, otherwise this (and the Orders page's status filter dropdown) will show a friendly "Could not load your orders" error instead of the filtered list |
 | 14 | Go to **Orders → Refunds**, issue a partial refund on a paid order | Order status becomes `partially_refunded`; check **Payments** page → a matching `refund` ledger row appears with a Surfboard reference ID |
 | 15 | Go to **Analytics**, click the **"Best seller"** quick-question chip | A real answer naming your actual top-selling product, computed server-side (never invented by the AI) |
 | 16 | Go to **Help**, search for "bank" | FAQ list filters to the bank-details-related article only |
 | 17 | Log out, go to `/admin/login`, enter the configured Access Code + Password | Lands on the Admin Dashboard; try `/app/dashboard` afterward → redirected away (admin session ≠ merchant session) |
 | 18 | On Dashboard, toggle **Closed** | Storefront (`/pay/:slug`) immediately shows "This store isn't currently taking orders" and disables checkout |
+| 19 | Open a direct product link (from step 7's Payment Link, or QR Payments' own **Share via WhatsApp**) in a fresh tab | Shows **only** that one product on a minimal branded page (merchant logo/name/badge + the product + fixed amount) — no other products, no About/Reviews/Gallery/footer sections, and the checkout form's product field is a locked read-only summary, not a dropdown |
+| 20 | In that locked checkout, click a tip preset (**10% / 15% / 20%**) or **Custom** | "Total with tip" line appears showing base amount + tip, computed client-side; the order's `totalAmount` sent to Surfboard includes it as its own line item |
+| 21 | Click **Pay Now**, then before completing on Surfboard's page, click the browser **Back** button, then click **Pay Now** again | Only **one** order is created for this checkout (verify in **Payments** or via `POST /api/orders` in the Network tab — it fires once, not twice); the second attempt reuses the same order and just requests a fresh payment link for it |
+| 22 | Complete a real payment, then on the receipt click **Continue Browsing** | Returns to the full storefront; the product just bought now shows a green **Purchased** badge with the paid date and transaction ID instead of a buy button — every other product stays normally purchasable |
+| 23 | Click **Buy Again** on that purchased product's card | Opens a fresh, unlocked checkout for the same product — a genuinely new order, not the old one |
 
 ---
 
@@ -211,33 +217,67 @@ The frontend has no separate test runner configured yet — verify it via `cd fr
 
 ## 8. Surfboard integration — what actually calls what
 
-All of this lives in `backend/src/services/surfboard.service.js`, the *only* file allowed to talk to Surfboard directly. This is a real, live integration against Surfboard's documented Online Payments API (server-to-server — the browser never talks to Surfboard), not a mock.
+All of this lives in `backend/src/services/surfboard.service.js`, the *only* file allowed to talk to Surfboard directly. This is a real, live integration against Surfboard's documented Online Payments API (server-to-server — the browser never talks to Surfboard), not a mock. Every scenario below was cross-checked directly against Surfboard's own API reference and integration guides (via the connected `surfboard-docs` MCP server) against the actual call sites in `backend/src`, confirming the request/response shapes PayLink builds match the documented contract exactly.
 
 - **Model:** a single shared Surfboard Merchant/Store/Terminal account backs *every* PayLink entrepreneur — not a separate Surfboard sub-merchant created per entrepreneur. Real per-merchant Surfboard onboarding would require domain verification and roughly a day of manual review, which is incompatible with PayLink's instant-live-after-onboarding model. Each PayLink order is tracked back to its owning merchant via `referenceId` (PayLink's own internal order ID).
-- **Create Order** (`POST /orders`) — used for both a real purchase and, with `type: 'return'`, a refund. When online checkout control functions are set, the response includes `paymentPageLink` directly — no separate "initiate payment" call needed for a normal checkout.
-- **Hosted Payment Page redirect** — the checkout flow is a redirect to Surfboard's own hosted page, not an inline form on PayLink's servers; card data never touches PayLink's backend at all. The customer returns via `redirectUrl` (success → the receipt page) or `failureRedirectUrl` (failure → back to checkout).
-- **Initiate Payment** (`POST /payments`) — for a normal card purchase this does NOT return a payment URL (only used for refunds below); the Create Order call above is what checkout actually uses.
-- **Void Payment** (`PUT /payments/:id/void`) — tried first for a same-day, full-amount refund with no prior partial refunds (no refund-processing fee, but only works before the payment settles).
-- **CNP Return + Refund** (`POST /payments` with `paymentMethod: 'CARD_NP'` against a `type: 'return'` order) — the fallback refund path once a payment has settled or Void isn't available; models a refund as a new "return" order per Surfboard's documented online-refund flow.
-- **Fetch Order Status** (`GET /orders/:id/status`) — used only by the background payment-reconciliation job to recover an order whose webhook confirmation never arrived (the primary completion path in any environment without a public HTTPS webhook URL).
-- **Fetch Payment Methods** (`GET /merchants/:id/payment-methods`) — a safe, read-only startup health check confirming the configured credentials actually authenticate, logged as a warning (never blocks server boot) if it fails.
-- **Webhook signature verification** — HMAC-**SHA512**, Base64-encoded, header `x-webhook-signature`, keyed by `SURFBOARD_WEBHOOK_CERTIFICATE`. If that certificate isn't configured, the webhook endpoint correctly returns `503` rather than silently skipping verification — a real security boundary, not a soft warning.
+
+| # | Scenario | Endpoint | Called from | Why |
+|---|---|---|---|---|
+| 1 | **Create Order** | `POST /merchants/:merchantId/orders` | `payment.service.js:258` (purchase); `refund.service.js:175` (refund, as a `type: 'return'` order with negative-quantity lines) | Surfboard models both a purchase *and* a refund as an order — there's no separate "refund object". `controlFunctions.online.redirectUrl`/`callBackUrl` on this same call is what sets up the Hosted Payment Page redirect and per-order webhook in one shot; the response returns `paymentPageLink` directly for a normal checkout, no extra call needed. |
+| 2 | **Hosted Payment Page redirect** | (part of Create Order's `controlFunctions.online`) | `payment.service.js` | Card data never touches PayLink's backend — the customer is redirected to Surfboard's own hosted page and back via `redirectUrl` (success) / `failureRedirectUrl` (failure). |
+| 3 | **Initiate a Payment** | `POST /payments` | `refund.service.js:197` — CNP (card-not-present) refunds only, via `paymentMethod: 'CARD_NP'` + `refundProcessingParams.purchasePaymentId`/`refundReason` | For a normal purchase, Create Order's own `controlFunctions` already produces the payment page — this call is only needed for the refund path where the original payment must be explicitly referenced. |
+| 4 | **Void a Payment** | `PUT /payments/:paymentId/void` | `refund.service.js:122` | Tried first for a same-day, still-`PAYMENT_COMPLETED` refund — per the docs this only works before 23:00 UTC on the payment's day (or anytime before capture if `delayCapture` is set), so PayLink falls back to Initiate Payment (CNP refund) once that window closes. |
+| 5 | **Fetch Order Status** | `GET /orders/:orderId/status` | `order.service.js:348` (on-demand); `paymentReconciliation.job.js:100` (scheduled polling) | Surfboard's own webhook guide recommends this exact fallback: *"if you have not received a payment event within 60 seconds, query the order status via the API"* — this is PayLink's safety net for a missed/delayed webhook, and the only completion path at all in any environment without a public HTTPS callback URL. |
+| 6 | **Fetch All Payment Methods** | `GET /merchants/:merchantId/payment-methods` | `admin.service.js:568` (`checkConnection`) | Repurposed as a cheap, side-effect-free startup/admin health check — a successful authenticated GET proves the configured `API-KEY`/`API-SECRET`/`MERCHANT-ID` actually work; failure is logged as a warning, never blocks server boot. |
+| 7 | **Webhook signature verification** | inbound `POST` to PayLink's own webhook route, header `x-webhook-signature` | `payment.controller.js:34` | HMAC-**SHA512** of the raw request body, Base64-encoded, `crypto.timingSafeEqual` compare — matches the docs' reference implementation exactly. If `SURFBOARD_WEBHOOK_CERTIFICATE` isn't configured, the endpoint returns `503` instead of silently skipping verification (a real security boundary). PayLink also follows the docs' idempotency guidance: dedup on `orderId`+`paymentId`, and treat `PAYMENT_COMPLETED`/`PAYMENT_FAILED`/`PAYMENT_CANCELLED` as terminal — a late/out-of-order callback can never overwrite one of these. |
+
+- **Tips API — investigated, deliberately not used.** See [Section 9.3](#93-tips-at-checkout-surfboard-api-scenarios-investigated) — Surfboard's native Tips API only configures physical card terminals/SoftPOS devices, it has no hook into the redirect-based Hosted Payment Page checkout PayLink uses, so PayLink computes and injects the tip as its own order line at Create Order time instead.
 - **Graceful degradation** — every method above throws a clean `SurfboardUnavailableError` (mapped to `503 PROVIDER_UNAVAILABLE`) if Surfboard isn't configured at all, so the rest of the app runs and is fully testable without a Surfboard account.
 
 ---
 
-## 9. Security posture
+## 9. Single Product Checkout and order integrity
+
+Two related pieces of real functionality, built together since both touch the checkout modal (`frontend/src/components/PaySecurelyModal.tsx`) and the customer-facing storefront.
+
+### 9.1 Single Product Checkout
+
+A merchant-generated link/QR (Payment Links / QR Payments pages, `/pay/:slug?pay={productId}` or `?pay=custom&amount=`) no longer opens the full storefront with a checkout modal layered on top of it — it renders a dedicated minimal page (`frontend/src/components/SingleProductBackdrop.tsx`): merchant branding + that one product/amount, nothing else. The checkout modal itself is `locked` in this mode — the product dropdown and quantity stepper are replaced with a fixed read-only summary, so there's no way to switch to a different item mid-checkout. Bare storefront links (`/pay/:slug`, no `pay` param) are completely unaffected — full catalog, About, Reviews, everything, exactly as before.
+
+### 9.2 Order integrity — no duplicate orders on refresh, back-navigation, or multiple tabs
+
+An order is created **only** when the customer clicks **Pay Now** — never on page load, never speculatively. The harder problem: the checkout flow's one required side-trip is a full top-level redirect to Surfboard's own hosted payment page and back, which means the browser tab's in-memory React state does not survive the round trip. Live-testing confirmed the realistic failure mode: click Pay Now, get redirected to Surfboard, hit the browser **Back** button before finishing, land back on the exact same checkout link, click Pay Now again — without a guard, that creates a **second** order for the same product.
+
+The fix (`frontend/src/utils/purchaseSession.ts`) is a `sessionStorage`-backed guard, deliberately **not** `localStorage`: `sessionStorage` is isolated per tab (two tabs checking out the same link never interfere with each other, satisfying the "works across multiple tabs" requirement for free) and clears itself when the tab closes.
+
+- The moment an order is created and *before* the redirect to Surfboard, `{orderId, createdAt}` is written under a key scoped to `{merchantSlug}:{productId-or-'custom'}`.
+- On (re)mount, the checkout modal checks for an existing, non-stale (< 30 minutes old — mirrors the backend's own payment-reconciliation staleness window) record for that exact product; if found, it's reused — `handlePayNow` calls `createPayment` directly against the existing order instead of `createOrder` again.
+- Verified live end-to-end via the Network tab: one full checkout attempt, browser back, a second Pay Now click → exactly **one** `POST /api/orders`, two separate `POST /api/payments/create` calls (one per redirect attempt) against that same order.
+- Once an order is confirmed paid, a second, separate "completed purchase" record (`{orderId, transactionId, paidAt, amount, currency}`) replaces the pending one. This drives two things: the storefront catalog grid shows a **Purchased** badge (with paid date + transaction ID) instead of a buy button for that product, and the locked Single Product Checkout page shows an **Already Paid** state instead of a blank form if the exact same link is opened again. Both offer an explicit **Buy Again** button, which clears the record and starts a real new order — the one legitimate way to intentionally re-purchase.
+
+### 9.3 Tips at checkout (Surfboard API scenarios investigated)
+
+The checkout modal has an "Add a tip" step (preset 10% / 15% / 20%, or a custom amount) that was missing its input control even though the rest of the pipeline was already fully built for it: `POST /api/orders`'s `tip` field, `order.service.js` folding it into `totalAmount`, and `payment.service.js` already appending it as a synthetic `{ name: 'Tip', ... }` line to the `orderLines` array sent to Surfboard's Create Order call.
+
+Before wiring up the missing UI, Surfboard's own API documentation was checked (via the connected docs tools) for a native tipping feature that should be used instead of a custom-built one. Finding: Surfboard does have a real **Tips API/Tips Configuration** (`guides/in-store-payments/administration/configure-tips/*`, plus a `controlFunctions.tipsMode` field on Create Order), and `list_api_sections` confirms it as its own top-level section — but by Surfboard's own docs, every one of these configures what a **physical card terminal / SoftPOS device** shows a tap-to-pay customer ("integrate tipping functionality directly into the payment terminals... preset or custom tip amounts on the terminal screen"). None of it applies to the redirect-based Hosted Payment Page PayLink's web checkout actually uses — that page just collects payment for whatever `orderLines`/total was fixed at order-creation time. Conclusion: there's no native "hosted-page tip" feature to swap in, so PayLink's existing approach (compute the tip client-side, add it as its own order line before calling Create Order) **is** the correct integration, not a workaround. The only real gap was the missing frontend input, which is now built.
+
+For completeness, the rest of the checkout/refund path was independently re-verified line-by-line against the docs too, confirmed to match exactly: **Create Order**'s `orderLines`/`totalOrderAmount`/`controlFunctions.online.redirectUrl`/`callBackUrl` shape (`api-md/orders-create-order.md`), **Initiate a Payment**'s `refundProcessingParams` fields for CNP refunds (`api-md/payments-initiate-a-payment.md`), **Void a Payment**'s `PAYMENT_COMPLETED`-only + 23:00 UTC cutoff rule (`api-md/payments-void-a-payment.md`), **Fetch Order Status**'s response shape including `orderStatus`/`payments[]`/`transactions[]` (`api-md/orders-fetch-order-status.md`), the official refund pattern of "creating a return order with negative quantities" (`web-guides/refund-an-order.md`), and the webhook signature/idempotency/retry contract — HMAC-SHA512 over the raw body, at-least-once delivery, dedup on `orderId`+`paymentId`, terminal statuses never overwritten, failed deliveries retried at 5s then 30s/60s/90s before an alert email and eventual auto-disable after 7 days (`web-guides/webhooks-notifications.md`).
+
+---
+
+## 10. Security posture
 
 From the final production audit — what's actually enforced today, in one place:
 
 - **Every merchant-scoped endpoint checks ownership**, not just a valid token — `assertOwnership` (`backend/src/utils/ownership.js`) confirms the authenticated `uid` actually owns the merchant/order/product being touched, on every single owner-only route. No IDOR (one merchant reading/writing another's data by guessing an ID) was found anywhere.
-- **Rate limiting** covers login/session (`authLimiter`), AI endpoints (`aiLimiter`), and — added in this pass — the public checkout path (`checkoutLimiter` on `POST /api/orders` and `POST /api/payments/create`, the two highest-exposure unauthenticated endpoints since the latter calls the paid third-party Surfboard API) and other public writes (`publicWriteLimiter` on ratings and disputes).
+- **Rate limiting** covers manual login attempts (`authLimiter`, 5/15min — applied to admin login, a genuine unauthenticated credential-guessing surface), automatic session establishment (`sessionLimiter`, 60/15min — `POST /api/auth/session`, which fires on every app load for an already-signed-in user rather than a manual attempt; live-testing found the two sharing a budget could lock a merchant out of their own dashboard from ordinary browser refreshes, so they were split), AI endpoints (`aiLimiter`), and the public checkout path (`checkoutLimiter` on `POST /api/orders` and `POST /api/payments/create`, the two highest-exposure unauthenticated endpoints since the latter calls the paid third-party Surfboard API) and other public writes (`publicWriteLimiter` on ratings and disputes).
 - **Webhook signature verification** is real and correctly ordered: HMAC-SHA512 over the exact raw request body, constant-time compared, checked *before* any business logic runs, and fails closed (503/401) rather than skipping verification if misconfigured.
 - **Secrets**: never hardcoded anywhere in source; `.gitignore` correctly excludes every real env file and service-account JSON; confirmed via `git ls-files` that only `.example` templates have ever been committed.
 - **CORS** fails closed to a single configured origin (not `*`), and **Helmet** is applied with its default secure-header set.
-- **Firestore rules**: the frontend never talks to Firestore directly (only `firebase/auth` is imported client-side; all data access is proxied through the backend's own authorization checks above), so the newly-added deny-all `firestore.rules` (Section 10 below) is defense-in-depth, not the live enforcement boundary.
+- **Firestore rules**: the frontend never talks to Firestore directly (only `firebase/auth` is imported client-side; all data access is proxied through the backend's own authorization checks above), so the newly-added deny-all `firestore.rules` (Section 11 below) is defense-in-depth, not the live enforcement boundary.
+- **Session-scoped checkout guards** (Section 9.2) are a UX/integrity safeguard against accidental duplicate orders, not a security boundary — `sessionStorage` is client-controlled and trivially clearable. The backend's own order/payment validation (ownership checks, status-transition rules in `order.service.js`) remains the real source of truth regardless of what the frontend remembers.
 
-## 10. Known gaps (honest status, not swept under the rug)
+## 11. Known gaps (honest status, not swept under the rug)
 
 - **Two Firestore composite indexes are declared but not yet deployed** — discovered by live-testing against the real project. `GET /api/merchants/:id/orders?status=...` (the Orders page's status filter — pre-existing, not something this pass added) and `?customer=...` (the Customers page's "filtered by customer" nav) both currently return a raw `500` against the real database until these are deployed, because the underlying Firestore query combines an equality filter with a sort on a different field. The index definitions are already checked into `backend/firestore.indexes.json`; see `backend/FIRESTORE_INDEX_SETUP.md` for the one-time `firebase deploy --only firestore:indexes` command (or the manual Console steps) to fix both. Everything else in this app — including the *unfiltered* Orders/Refunds tabs — is unaffected.
 - **A defense-in-depth `backend/firestore.rules` (deny-all) is checked in but not yet deployed** — not currently load-bearing (every read/write goes through the backend's Admin SDK, which bypasses rules entirely; confirmed the frontend never imports `firebase/firestore`), but should be deployed alongside the indexes above (`cd backend && firebase deploy --only firestore:rules,firestore:indexes`) so a future accidental client-side Firestore call — or a project left in permissive "test mode" — has a real deployed backstop, not just a file sitting in the repo. `backend/firebase.json` (pointing the CLI at `firestore.rules`/`firestore.indexes.json`) has been added so this command actually works — it was previously missing entirely, which would have made even a manual deploy attempt fail.
@@ -248,7 +288,7 @@ From the final production audit — what's actually enforced today, in one place
 - Analytics' "Top products" chart only has visibility into the current month's most recent 10 orders (a limitation of the underlying summary endpoint, documented in the component's own code comment) — the AI Earnings Assistant's "Best seller" answer, computed over the full requested range server-side, remains the authoritative figure.
 - **AI Setup Concierge's "tagline suggestions" step is currently inert** — `DescriptionStep` accepts an `onTaglineSuggestions` callback and a whole wizard step (`SuggestionsStep`) exists to display AI-drafted tagline alternates, but nothing ever calls that callback (the AI response only ever returns a single `tagline`, never a suggestions array) and the backend has no support for returning multiple. Every user just sees `SuggestionsStep`'s graceful "no alternates available" fallback. Needs a product decision (wire it up for real, or remove the step) — tracked separately, not fixed blind.
 
-## 11. Tooling & code-quality pass
+## 12. Tooling & code-quality pass
 
 - **Both packages now have a real, working ESLint setup** — previously, `frontend/package.json`'s `lint` script pointed at a nonexistent `eslint.config.js` (would error immediately on ESLint v9+), and `backend/package.json` had no `lint` script at all despite the root `package.json`'s `lint:backend` referencing one. Both are fixed (`frontend/eslint.config.js`, `backend/eslint.config.js`); `npm run lint:backend` / `npm run lint:frontend` from the root now actually run. The rule sets were reconstructed to match the many pre-existing inline `eslint-disable` comments already throughout `backend/src` (`no-console`, `no-await-in-loop`, `no-continue`, `global-require`, etc.) rather than guessed from scratch, so those comments suppress real rules again instead of reading as orphaned directives.
 - **Removed the unused `@anthropic-ai/sdk` backend dependency** — the code that used it (`callAnthropicLegacy`) was already removed in an earlier pass per explicit instruction (this project only ever integrated OpenRouter + Gemini), but the npm package itself was left behind. Confirmed zero remaining imports before removing.
@@ -257,7 +297,7 @@ From the final production audit — what's actually enforced today, in one place
 
 ---
 
-## 12. Production Completion — Final Audit Fixes
+## 13. Production Completion — Final Audit Fixes
 
 The following changes were made in the final production pass to bring the application to a **100% production-ready** state:
 
@@ -282,3 +322,18 @@ The following changes were made in the final production pass to bring the applic
 
 ### SEO & Branding
 **`frontend/index.html`** — Added production-grade SEO: descriptive `<title>`, `<meta name="description">`, `theme-color`, Open Graph (`og:title/description/image/type`), and Twitter Card meta tags. Also added `<link rel="apple-touch-icon">` for iOS home screen support.
+
+### UI/UX visual redesign pass
+Reskinned the customer-facing and admin surfaces, keeping every existing feature/flow/API call unchanged — this was purely visual:
+- **Storefront** (`PublicStoreView.tsx`) — a dark navy branded hero (logo, category badge, "Surfboard Verified" badge, star-rating box with real data), eyebrow-labeled sections ("About", "Products & Offerings", "Customer feedback", "Contact & Operating Info"), a real "Working Hours" read path (previously hardcoded placeholder text, now reads the merchant's actual configured hours), a 4-card contact grid, and a matching dark footer.
+- **Checkout & receipt modals** (`Modal.tsx`'s new `variant="branded"`, used only by `PaySecurelyModal.tsx`/`ReceiptOverlay.tsx`) — a "Secured by Surfboard Payments" dark header banner, scoped so every other modal in the app (Products edit, admin confirmations, refund modal) keeps its plain default look.
+- **Admin Portal** — eyebrow labels and icon-enhanced nav cards across all 6 pages (Dashboard, Merchants, Reports & Analytics, Refunds & Disputes, System, Settings), using only real data (e.g. the Refunds & Disputes nav card's badge count is the actual open-dispute number, never fabricated).
+- **Dark/Light theme toggle** — confirmed fully functional everywhere after the redesign; the storefront hero/footer and checkout/receipt modal headers are a deliberate fixed-dark brand accent (the same pattern Stripe/Linear-style checkout chrome uses), while every dashboard/admin surface uses the existing theme-token system and genuinely re-themes on toggle.
+- **PDF receipt** (`ReceiptContent.tsx`'s `DownloadBillButton`) — fixed a real distortion bug: the logo asset is a true 500×500 square, but the PDF code was force-stretching it into a ~3.75:1 wide box. Now uses the icon-only square logo at correct proportions, plus a full visual redesign: branded indigo header/footer bands, rounded shaded FROM/TO cards, a real filled status pill (correctly reading PAID/REFUNDED/PARTIALLY REFUNDED from the order's actual status instead of always saying "PAID/VERIFIED"), a colored table header with alternating row shading, and a highlighted Grand Total row.
+
+### Bug fixes found during this pass
+- **Session-establishment rate limiting** — `POST /api/auth/session` fires automatically on every app load for an already-signed-in user (not a manual login attempt), but shared `authLimiter`'s tight 5-per-15-minutes budget with the admin-login brute-force guard. Live-testing reproduced a real lockout from a handful of ordinary browser refreshes. Split into its own `sessionLimiter` (60/15min); see [Section 10](#10-security-posture).
+- **Blank screen on session failure** — `ProtectedRoute` didn't check `AuthContext`'s `sessionError` at all, so a failed session establishment (rate limiting or otherwise) fell through to a confusing role-mismatch redirect instead of a retry UI. Added the same "couldn't load your account, try again" fallback Login/Register already had.
+- **AI chat markdown not rendering** — the AI Earnings Assistant's `**bold**` markdown showed as literal asterisks in the chat bubble. Added a small inline renderer (`ChatPrimitives.tsx`) — deliberately minimal (bold only), not a full markdown library.
+- **`text-warning-strong` — a non-existent Tailwind class** silently rendering no color on the storefront's "store closed" banner (not a defined token in `tailwind.config.ts`/`tokens.css`). Fixed to a real token.
+- **Stale `senior_admin` copy** — Admin Settings' subtitle still said "Restricted to senior admins," left over from the single-tier `admin` role consolidation earlier in the project. Corrected.

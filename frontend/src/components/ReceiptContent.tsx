@@ -265,6 +265,13 @@ export function ReceiptContent({ orderId, variant = 'page', onContinue, continue
                   </div>
                 </div>
 
+                <div className="flex items-center justify-between border-b border-border/40 pb-6 text-body-m">
+                  <span className="text-text-secondary font-medium">Status</span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[12px] font-semibold uppercase tracking-wide text-emerald-500">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> {status === 'refunded' ? 'Refunded' : status === 'partially_refunded' ? 'Partially Refunded' : 'Completed'}
+                  </span>
+                </div>
+
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 pt-2">
                   <DownloadBillButton data={data} />
                   
@@ -294,7 +301,7 @@ export function ReceiptContent({ orderId, variant = 'page', onContinue, continue
                     className="py-1.5 text-caption shadow-sm"
                     onClick={onContinue}
                   >
-                    {continueLabel || 'Continue browsing'}
+                    {continueLabel || 'Continue Browsing'}
                   </Button>
                 </div>
               </Card>
@@ -548,100 +555,133 @@ function DownloadBillButton({ data }: { data: OrderReceiptResponse }) {
     setGenerating(true);
     try {
       const { jsPDF } = await import('jspdf');
-      const { orderId, transactionId, items, totalAmount, currency, tipAmount, note, createdAt, merchant, customerName, customerPhone } = data;
+      const { orderId, transactionId, items, totalAmount, currency, tipAmount, note, createdAt, merchant, customerName, customerPhone, status } =
+        data;
 
       const doc = new jsPDF();
       const rightEdge = 196;
-      let y = 20;
+      const leftEdge = 14;
 
-      // Add logo
+      // Brand palette — matches frontend/src/theme/tokens.css's light-mode
+      // --color-primary/--color-secondary, since a printed/downloaded PDF
+      // has no dark-mode concept of its own to follow.
+      const INDIGO: [number, number, number] = [79, 70, 229];
+      const INDIGO_LIGHT: [number, number, number] = [237, 236, 253];
+      const EMERALD: [number, number, number] = [16, 185, 129];
+      const INK: [number, number, number] = [30, 32, 44];
+      const SLATE: [number, number, number] = [100, 110, 120];
+      const PALE: [number, number, number] = [247, 248, 250];
+      const BORDER: [number, number, number] = [228, 230, 236];
+
+      let y = 0;
+
+      // ---- Header band ------------------------------------------------
+      const headerHeight = 42;
+      doc.setFillColor(...INDIGO);
+      doc.rect(0, 0, 210, headerHeight, 'F');
+
+      // Square icon-only mark (the source asset is a true 1:1 square — a
+      // wider lockup image was previously force-stretched into a ~3.75:1
+      // box here, which is what distorted it) drawn at its real aspect ratio.
       try {
-        const logoBase64 = await loadImageAsBase64('/logo_with_paylink.png');
-        doc.addImage(logoBase64, 'PNG', 14, 15, 45, 12);
+        const logoBase64 = await loadImageAsBase64('/logo.png');
+        doc.addImage(logoBase64, 'PNG', leftEdge, 11, 20, 20);
       } catch (err) {
         console.warn('Could not load receipt logo image:', err);
       }
 
-      // Title & Date Header (aligned right)
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(18);
-      doc.setTextColor(33, 43, 54);
-      doc.text('TAX INVOICE / RECEIPT', rightEdge, 22, { align: 'right' });
+      doc.setTextColor(255, 255, 255);
+      doc.text('PayLink', leftEdge + 24, 22);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(224, 222, 250);
+      doc.text('Secure Digital Payments', leftEdge + 24, 27.5);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(15);
+      doc.setTextColor(255, 255, 255);
+      doc.text('TAX INVOICE / RECEIPT', rightEdge, 16, { align: 'right' });
 
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.setTextColor(100, 110, 120);
-      doc.text(`Invoice No: INV-${orderId.substring(0, 8).toUpperCase()}`, rightEdge, 28, { align: 'right' });
-      doc.text(`Ref ID: ${(transactionId || orderId.substring(0, 8)).toUpperCase()}`, rightEdge, 33, { align: 'right' });
-      doc.text(`Date: ${new Date(createdAt).toLocaleString()}`, rightEdge, 38, { align: 'right' });
+      doc.setFontSize(7.5);
+      doc.setTextColor(224, 222, 250);
+      doc.text(`Invoice No: INV-${orderId.substring(0, 8).toUpperCase()}`, rightEdge, 22, { align: 'right' });
+      doc.text(`Ref ID: ${(transactionId || orderId.substring(0, 8)).toUpperCase()}`, rightEdge, 26.5, { align: 'right' });
+      doc.text(`Date: ${new Date(createdAt).toLocaleString()}`, rightEdge, 31, { align: 'right' });
 
-      y = 48;
+      y = headerHeight + 10;
 
-      // Divider line
-      doc.setDrawColor(220, 224, 230);
-      doc.setLineWidth(0.5);
-      doc.line(14, y, rightEdge, y);
-      y += 10;
+      // ---- FROM / TO cards ---------------------------------------------
+      const cardTop = y;
+      const cardHeight = 34;
+      doc.setFillColor(...PALE);
+      doc.roundedRect(leftEdge, cardTop, 86, cardHeight, 2.5, 2.5, 'F');
+      doc.roundedRect(110, cardTop, 86, cardHeight, 2.5, 2.5, 'F');
 
-      // Columns: Merchant Details & Billing Details side-by-side
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(...INDIGO);
+      doc.text('FROM (MERCHANT)', leftEdge + 4, cardTop + 7);
+      doc.text('TO (CUSTOMER)', 114, cardTop + 7);
+
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(10);
-      doc.setTextColor(33, 43, 54);
-      doc.text('FROM (MERCHANT):', 14, y);
-      doc.text('TO (CUSTOMER):', 110, y);
-      y += 5;
+      doc.setTextColor(...INK);
+      doc.text(merchant?.businessName || 'Merchant Partner', leftEdge + 4, cardTop + 14);
+      doc.text(customerName || 'Valued Customer', 114, cardTop + 14);
 
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.setTextColor(80, 90, 100);
-      
-      // Merchant details
-      doc.text(merchant?.businessName || 'Merchant Partner', 14, y);
-      let mOffset = 5;
+      doc.setFontSize(8);
+      doc.setTextColor(...SLATE);
+      let mOffset = cardTop + 19;
       if (merchant?.tagline) {
-        doc.text(merchant.tagline.substring(0, 50), 14, y + mOffset);
-        mOffset += 5;
+        doc.text(merchant.tagline.substring(0, 48), leftEdge + 4, mOffset);
+        mOffset += 4.5;
       }
       if (merchant?.address) {
-        const addrStr = [
-          merchant.address.line1,
-          merchant.address.city,
-          merchant.address.country
-        ].filter(Boolean).join(', ');
-        doc.text(addrStr.substring(0, 50), 14, y + mOffset);
-        mOffset += 5;
+        const addrStr = [merchant.address.line1, merchant.address.city, merchant.address.country].filter(Boolean).join(', ');
+        if (addrStr) {
+          doc.text(addrStr.substring(0, 48), leftEdge + 4, mOffset);
+          mOffset += 4.5;
+        }
       }
       if (merchant?.phone || merchant?.email) {
         const contactStr = [merchant.phone, merchant.email].filter(Boolean).join(' | ');
-        doc.text(contactStr.substring(0, 50), 14, y + mOffset);
-        mOffset += 5;
+        doc.text(contactStr.substring(0, 48), leftEdge + 4, mOffset);
+        mOffset += 4.5;
       }
-      doc.text('Payments powered by PayLink', 14, y + mOffset);
+      doc.setFont('helvetica', 'italic');
+      doc.text('Payments powered by PayLink', leftEdge + 4, cardTop + cardHeight - 4);
 
-      // Customer Details
-      doc.text(customerName || 'Valued Customer', 110, y);
+      doc.setFont('helvetica', 'normal');
       if (customerPhone) {
-        doc.text(`Phone: ${customerPhone}`, 110, y + 5);
+        doc.text(`Phone: ${customerPhone}`, 114, cardTop + 19);
       }
 
-      y += 28;
+      y = cardTop + cardHeight + 10;
 
-      // Payment Status Badge
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.setTextColor(34, 197, 94); // Green
-      doc.text('STATUS: PAID / VERIFIED', 14, y);
-      doc.setTextColor(33, 43, 54);
-
-      y += 10;
-
-      // Table Header
-      doc.setFillColor(245, 247, 250);
-      doc.rect(14, y, rightEdge - 14, 8, 'F');
-      
+      // ---- Status pill ---------------------------------------------------
+      const statusLabel =
+        status === 'refunded' ? 'REFUNDED' : status === 'partially_refunded' ? 'PARTIALLY REFUNDED' : 'PAID / VERIFIED';
+      doc.setFillColor(...EMERALD);
+      const pillWidth = doc.getTextWidth(statusLabel) + 14;
+      doc.roundedRect(leftEdge, y, pillWidth, 8.5, 4.25, 4.25, 'F');
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
-      doc.setTextColor(100, 110, 120);
+      doc.setTextColor(255, 255, 255);
+      doc.text(statusLabel, leftEdge + pillWidth / 2, y + 5.7, { align: 'center' });
+
+      y += 8.5 + 8;
+
+      // ---- Items table -----------------------------------------------
+      doc.setFillColor(...INDIGO);
+      doc.rect(leftEdge, y, rightEdge - leftEdge, 8, 'F');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(255, 255, 255);
       doc.text('Item Description', 18, y + 5.5);
       doc.text('Qty', 110, y + 5.5, { align: 'center' });
       doc.text('Unit Price', 145, y + 5.5, { align: 'right' });
@@ -649,89 +689,93 @@ function DownloadBillButton({ data }: { data: OrderReceiptResponse }) {
 
       y += 8;
 
-      // Table Rows
       doc.setFont('helvetica', 'normal');
-      doc.setTextColor(33, 43, 54);
       doc.setFontSize(9);
 
-      items.forEach((item) => {
+      items.forEach((item, i) => {
         const itemPrice = item.price;
         const total = lineTotal(item);
-        
+
+        if (i % 2 === 1) {
+          doc.setFillColor(...PALE);
+          doc.rect(leftEdge, y, rightEdge - leftEdge, 9, 'F');
+        }
+
+        doc.setTextColor(...INK);
         doc.text(item.name, 18, y + 5.5);
         doc.text(item.quantity.toString(), 110, y + 5.5, { align: 'center' });
         doc.text(`${currency} ${itemPrice.toFixed(2)}`, 145, y + 5.5, { align: 'right' });
         doc.text(`${currency} ${total.toFixed(2)}`, rightEdge - 4, y + 5.5, { align: 'right' });
-        
-        doc.setDrawColor(240, 242, 245);
-        doc.line(14, y + 9, rightEdge, y + 9);
+
         y += 9;
       });
 
-      y += 6;
+      doc.setDrawColor(...BORDER);
+      doc.setLineWidth(0.4);
+      doc.line(leftEdge, y, rightEdge, y);
+      y += 8;
 
-      // Summary
+      // ---- Summary -------------------------------------------------------
       doc.setFont('helvetica', 'normal');
-      doc.setTextColor(100, 110, 120);
-      
+      doc.setFontSize(9.5);
+      doc.setTextColor(...SLATE);
+
       const subtotal = items.reduce((sum, item) => sum + lineTotal(item), 0);
-      doc.text('Subtotal:', 135, y, { align: 'right' });
+      doc.text('Subtotal', 135, y, { align: 'right' });
       doc.text(`${currency} ${subtotal.toFixed(2)}`, rightEdge - 4, y, { align: 'right' });
       y += 6;
 
       if (tipAmount > 0) {
-        doc.text('Tip Amount:', 135, y, { align: 'right' });
+        doc.text('Tip', 135, y, { align: 'right' });
         doc.text(`${currency} ${tipAmount.toFixed(2)}`, rightEdge - 4, y, { align: 'right' });
         y += 6;
       }
 
-      // Total Line
-      doc.setDrawColor(220, 224, 230);
-      doc.line(110, y - 2, rightEdge, y - 2);
-
+      y += 2;
+      doc.setFillColor(...INDIGO_LIGHT);
+      doc.roundedRect(105, y, rightEdge - 105, 12, 2, 2, 'F');
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.setTextColor(33, 43, 54);
-      doc.text('Grand Total (VAT Incl.):', 135, y + 3, { align: 'right' });
-      doc.text(`${currency} ${totalAmount.toFixed(2)}`, rightEdge - 4, y + 3, { align: 'right' });
-      
-      y += 20;
+      doc.setFontSize(11.5);
+      doc.setTextColor(...INDIGO);
+      doc.text('Grand Total', 110, y + 8);
+      doc.text(`${currency} ${totalAmount.toFixed(2)}`, rightEdge - 4, y + 8, { align: 'right' });
+
+      y += 12 + 10;
 
       if (note) {
         doc.setFont('helvetica', 'italic');
         doc.setFontSize(9);
-        doc.setTextColor(120, 125, 135);
-        doc.text(`Customer Note: "${note}"`, 14, y);
+        doc.setTextColor(...SLATE);
+        doc.text(`Customer Note: "${note}"`, leftEdge, y);
         y += 10;
       }
 
-      // QR Verification & Support Details
+      // ---- Verification block --------------------------------------------
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
-      doc.setTextColor(33, 43, 54);
-      doc.text('SECURE TRANSACTION VERIFICATION:', 14, y);
+      doc.setTextColor(...INK);
+      doc.text('SECURE TRANSACTION VERIFICATION', leftEdge, y);
       y += 5;
-      
+
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8);
-      doc.setTextColor(100, 110, 120);
-      doc.text(`QR Code Ref: [VERIFIED-ORDER-${orderId.toUpperCase()}]`, 14, y);
+      doc.setTextColor(...SLATE);
+      doc.text(`QR Code Ref: [VERIFIED-ORDER-${orderId.toUpperCase()}]`, leftEdge, y);
       y += 5;
       if (merchant?.email) {
-        doc.text(`For support or questions, reach out to the merchant directly at: ${merchant.email}`, 14, y);
+        doc.text(`For support or questions, reach out to the merchant directly at: ${merchant.email}`, leftEdge, y);
       } else {
-        doc.text('For support or questions, reach out to the merchant directly using details above.', 14, y);
+        doc.text('For support or questions, reach out to the merchant directly using details above.', leftEdge, y);
       }
 
-      // Footer notice
-      doc.setDrawColor(230, 235, 240);
-      doc.line(14, 265, rightEdge, 265);
-      
+      // ---- Footer band (fixed to the bottom of the page) -----------------
+      doc.setFillColor(...INDIGO);
+      doc.rect(0, 283, 210, 14, 'F');
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(150, 155, 165);
-      doc.text('Thank you for choosing us!', 14, 272);
-      doc.text('Powered by PayLink. Verified Secure Digital Invoice.', rightEdge, 272, { align: 'right' });
+      doc.setFontSize(8.5);
+      doc.setTextColor(255, 255, 255);
+      doc.text('Thank you for choosing us!', leftEdge, 291);
+      doc.text('Powered by PayLink · Verified Secure Digital Invoice', rightEdge, 291, { align: 'right' });
 
       doc.save(`receipt-${orderId}.pdf`);
     } catch (err) {
@@ -743,7 +787,7 @@ function DownloadBillButton({ data }: { data: OrderReceiptResponse }) {
 
   return (
     <Button variant="ghost" className="w-full text-caption flex items-center justify-center gap-1.5 py-1.5" loading={generating} onClick={handleDownload}>
-      <Download className="h-4 w-4" /> Download Bill (PDF)
+      <Download className="h-4 w-4" /> Download Receipt
     </Button>
   );
 }

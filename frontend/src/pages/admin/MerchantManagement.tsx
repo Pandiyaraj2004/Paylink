@@ -143,7 +143,10 @@ export default function MerchantManagement() {
 
   return (
     <AdminShell>
-      <h1 className="font-display text-h1 font-semibold text-text-primary">Merchant Management</h1>
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
+        Merchant Oversight
+      </span>
+      <h1 className="mt-2 font-display text-h1 font-semibold text-text-primary">Merchant Management</h1>
       <p className="mt-1 text-body-m text-text-secondary">Monitor merchant accounts and enforce standing post-launch.</p>
 
       <div className="mb-4 mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">

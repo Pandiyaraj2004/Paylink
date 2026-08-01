@@ -1,7 +1,7 @@
 import React from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { X } from 'lucide-react';
+import { ShieldCheck, X } from 'lucide-react';
 import { cn } from '@/utils/cn';
 
 interface ModalProps {
@@ -10,6 +10,14 @@ interface ModalProps {
   title: string;
   children: React.ReactNode;
   className?: string;
+  /**
+   * 'branded' swaps the plain title row for a dark "Secured by Surfboard
+   * Payments" banner — used only by the customer-facing checkout/receipt
+   * overlays (PaySecurelyModal, ReceiptOverlay) to match the trust chrome on
+   * the storefront's hero/footer. Every other caller (Products edit, admin
+   * confirmations, refund modal, etc.) keeps the plain default look.
+   */
+  variant?: 'default' | 'branded';
 }
 
 /**
@@ -20,8 +28,9 @@ interface ModalProps {
  * matching AuthLayout's glass-card treatment on larger ones; gated behind
  * `useReducedMotion` like the rest of the app's motion (Section 17.10).
  */
-export function Modal({ open, onOpenChange, title, children, className }: ModalProps) {
+export function Modal({ open, onOpenChange, title, children, className, variant = 'default' }: ModalProps) {
   const reduceMotion = useReducedMotion();
+  const isBranded = variant === 'branded';
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -59,24 +68,45 @@ export function Modal({ open, onOpenChange, title, children, className }: ModalP
                 exit={{ opacity: 0, scale: reduceMotion ? 1 : 0.97, y: reduceMotion ? 0 : 16 }}
                 transition={{ duration: reduceMotion ? 0 : 0.2, ease: 'easeOut' }}
                 className={cn(
-                  'max-h-[90vh] overflow-y-auto rounded-t-xl border border-border bg-surface p-6 shadow-lg',
+                  'max-h-[90vh] overflow-y-auto overflow-x-hidden rounded-t-xl border border-border bg-surface shadow-lg',
                   'sm:max-h-[85vh] sm:rounded-xl',
+                  !isBranded && 'p-6',
                   className
                 )}
               >
-                <div className="mb-4 flex items-center justify-between">
-                  <Dialog.Title className="text-h3 font-semibold text-text-primary">{title}</Dialog.Title>
-                  <Dialog.Close asChild>
-                    <button
-                      type="button"
-                      aria-label="Close"
-                      className="flex h-8 w-8 items-center justify-center rounded-md text-text-secondary hover:bg-bg"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </Dialog.Close>
-                </div>
-                {children}
+                {isBranded ? (
+                  <div className="flex items-center justify-between bg-[#0b0f1e] px-6 py-4 text-white">
+                    <div>
+                      <p className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-400">
+                        <ShieldCheck className="h-3.5 w-3.5" /> Secured by Surfboard Payments
+                      </p>
+                      <Dialog.Title className="text-h3 font-semibold text-white">{title}</Dialog.Title>
+                    </div>
+                    <Dialog.Close asChild>
+                      <button
+                        type="button"
+                        aria-label="Close"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-white/70 hover:bg-white/10"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </Dialog.Close>
+                  </div>
+                ) : (
+                  <div className="mb-4 flex items-center justify-between">
+                    <Dialog.Title className="text-h3 font-semibold text-text-primary">{title}</Dialog.Title>
+                    <Dialog.Close asChild>
+                      <button
+                        type="button"
+                        aria-label="Close"
+                        className="flex h-8 w-8 items-center justify-center rounded-md text-text-secondary hover:bg-bg"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </Dialog.Close>
+                  </div>
+                )}
+                {isBranded ? <div className="p-6">{children}</div> : children}
               </motion.div>
             </Dialog.Content>
           </Dialog.Portal>

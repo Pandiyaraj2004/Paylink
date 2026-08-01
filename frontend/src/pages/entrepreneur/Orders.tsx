@@ -28,7 +28,10 @@ export default function Orders() {
 
   return (
     <AppShell>
-      <h1 className="font-display text-h1 font-semibold text-text-primary">Orders</h1>
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
+        Order Management
+      </span>
+      <h1 className="mt-2 font-display text-h1 font-semibold text-text-primary">Orders</h1>
       <p className="mt-1 text-body-m text-text-secondary">Search, filter, and manage payments and refunds.</p>
 
       <div className="mt-6 flex gap-1 border-b border-border" role="tablist">

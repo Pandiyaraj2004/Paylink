@@ -3,10 +3,12 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Frown } from 'lucide-react';
 import { Skeleton } from '@/components/Skeleton';
 import { PublicStoreView, type StoreSelection } from '@/components/PublicStoreView';
+import { SingleProductBackdrop } from '@/components/SingleProductBackdrop';
 import { PaySecurelyModal } from '@/components/PaySecurelyModal';
 import { ReceiptOverlay } from '@/components/ReceiptOverlay';
 import { usePublicPage } from '@/hooks/useMerchant';
 import { useOrderReceipt } from '@/hooks/useOrders';
+import { clearPurchase, getAllPurchases, productKeyFor, recordPurchase } from '@/utils/purchaseSession';
 
 /**
  * Public Store (master-doc.md Section 15.1) — the branded page a specific
@@ -59,6 +61,26 @@ export default function PublicStore() {
     if (orderIdParam) setReceiptOrderId(orderIdParam);
     // Only re-evaluate when the URL itself changes, not on every render.
   }, [payParam, orderIdParam]);
+
+  // Records the purchase(s) this order covers as soon as they're confirmed
+  // paid — before the customer ever taps "Continue Browsing" — so the
+  // storefront grid can badge them as already-purchased-this-session the
+  // moment it renders, and a direct-link revisit shows "Already Paid"
+  // instead of a blank checkout form. Safe to fire more than once (e.g. the
+  // receipt polling re-fetches, or the customer taps back in): recording
+  // the same order over itself is a no-op, not a duplicate.
+  useEffect(() => {
+    if (!hasPaid || !orderReceipt || !slug) return;
+    for (const item of orderReceipt.items) {
+      recordPurchase(slug, productKeyFor(item.productId), {
+        orderId: orderReceipt.orderId,
+        transactionId: orderReceipt.transactionId,
+        paidAt: orderReceipt.createdAt,
+        amount: item.customAmount ?? item.price * item.quantity,
+        currency: orderReceipt.currency,
+      });
+    }
+  }, [hasPaid, orderReceipt, slug]);
 
   const notFound =
     isError && (error as { response?: { status?: number } })?.response?.status === 404;
@@ -132,9 +154,51 @@ export default function PublicStore() {
   const initialCustomAmount =
     manualSelection?.kind === 'custom' ? manualSelection.amount : payParam === 'custom' && amountParam ? Number(amountParam) : null;
 
+  // A merchant-generated single-item link/QR (`?pay=`), not the customer
+  // browsing the full storefront and picking something themselves
+  // (`manualSelection` set) — shows just that one product's payment option,
+  // per the explicit ask, instead of the full multi-product store.
+  const isDirectLink = !manualSelection && !!payParam;
+
+  // Read fresh on every render (cheap — a handful of sessionStorage reads)
+  // rather than memoized, so a purchase recorded by the effect above shows
+  // up the moment the customer lands back on the full storefront.
+  const purchasedThisSession = !isDirectLink
+    ? getAllPurchases(slug as string, [...page.items.map((i) => i.id), 'custom'])
+    : {};
+
+  const handleBuyAgain = (productId: string | null) => {
+    // Must clear here, not just rely on PaySecurelyModal's own "Buy Again" —
+    // this opens the modal fresh (not already showing its "Already Paid"
+    // branch), which itself checks for a purchase record on open and would
+    // otherwise immediately re-show "Already Paid" for a record we didn't clear.
+    clearPurchase(slug as string, productKeyFor(productId));
+    setManualSelection(
+      productId ? { kind: 'item', item: page.items.find((i) => i.id === productId)!, quantity: 1 } : null
+    );
+    setRetryOrderId(null);
+    setModalOpen(true);
+  };
+
   return (
     <div className="min-h-screen bg-bg px-4 py-10 sm:px-6">
-      <PublicStoreView page={page} mode="live" onProceed={handleProceed} hasPaid={hasPaid} />
+      {isDirectLink ? (
+        <SingleProductBackdrop
+          page={page}
+          product={page.items.find((i) => i.id === initialProductId) ?? null}
+          quantity={initialQuantity && initialQuantity > 0 ? initialQuantity : 1}
+          customAmount={initialCustomAmount}
+        />
+      ) : (
+        <PublicStoreView
+          page={page}
+          mode="live"
+          onProceed={handleProceed}
+          hasPaid={hasPaid}
+          purchasedThisSession={purchasedThisSession}
+          onBuyAgain={handleBuyAgain}
+        />
+      )}
       <PaySecurelyModal
         open={modalOpen}
         onOpenChange={handleModalOpenChange}
@@ -148,6 +212,7 @@ export default function PublicStore() {
         initialQuantity={initialQuantity}
         initialCustomAmount={initialCustomAmount}
         recoveredOrderId={retryOrderId}
+        locked={isDirectLink}
       />
       {receiptOrderId && (
         <ReceiptOverlay orderId={receiptOrderId} onDismiss={handleReceiptDismiss} onRetry={handleReceiptRetry} slug={slug} />

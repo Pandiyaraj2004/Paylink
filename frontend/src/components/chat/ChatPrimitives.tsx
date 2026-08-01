@@ -54,6 +54,24 @@ export function TypingIndicator() {
 }
 
 /**
+ * Renders `**bold**` markdown segments as real `<strong>` text. The AI
+ * providers naturally format replies with light markdown (see
+ * ai.service.js's system prompts); this is a display-only concern — the
+ * backend keeps returning plain text, nothing about the API/response shape
+ * changes. Deliberately minimal (bold only) rather than pulling in a full
+ * markdown renderer for a chat bubble.
+ */
+function renderInlineMarkdown(text: string): React.ReactNode[] {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+      return <strong key={i}>{part.slice(2, -2)}</strong>;
+    }
+    return <React.Fragment key={i}>{part}</React.Fragment>;
+  });
+}
+
+/**
  * A single chat message bubble. For assistant messages, reveals the text
  * client-side over a short interval for a "streaming" feel — the backend
  * always returns the complete reply (Section 26.7 fallback behavior is
@@ -103,7 +121,7 @@ export function ChatBubble({
           : 'self-start bg-bg text-text-primary'
       )}
     >
-      {revealed}
+      {isUser ? revealed : renderInlineMarkdown(revealed)}
     </motion.div>
   );
 }

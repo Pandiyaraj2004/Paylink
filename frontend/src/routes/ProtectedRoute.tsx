@@ -3,7 +3,30 @@ import { useAuth } from '@/hooks/useAuth';
 import { useAdminAuth } from '@/hooks/useAdminAuth';
 import { useMerchant } from '@/hooks/useMerchant';
 import { Loading } from '@/components/Loading';
+import { Button } from '@/components/Button';
 import { getRoleHomePath } from '@/utils/roleRedirect';
+
+/**
+ * Shown when Firebase auth succeeded but POST /api/auth/session failed
+ * (AuthContext's `sessionError`) — e.g. a transient backend error or the
+ * login rate limiter. Without this, `role` stays null forever, and
+ * ProtectedRoute's own `role !== 'entrepreneur'` check below would
+ * misread "session failed" as "wrong role" and silently redirect instead
+ * of explaining what happened. Mirrors the retry block already used on
+ * Login.tsx/Register.tsx for the same failure mode.
+ */
+function SessionErrorFallback({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-bg px-4 text-center">
+      <p className="max-w-sm text-body-m text-text-secondary">
+        You're signed in, but we couldn't load your account. This is usually temporary.
+      </p>
+      <Button variant="ghost" onClick={onRetry}>
+        Try again
+      </Button>
+    </div>
+  );
+}
 
 /**
  * Entrepreneur-only gate for the `/app/*` route group (master-doc.md Section
@@ -16,7 +39,7 @@ import { getRoleHomePath } from '@/utils/roleRedirect';
  * entirely (Section 24.4-24.6) and isn't a `role` value this hook ever sees.
  */
 export function ProtectedRoute() {
-  const { user, role, loading } = useAuth();
+  const { user, role, loading, sessionError, retrySession } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -25,6 +48,10 @@ export function ProtectedRoute() {
 
   if (!user) {
     return <Navigate to="/merchant/login" state={{ from: location }} replace />;
+  }
+
+  if (sessionError) {
+    return <SessionErrorFallback onRetry={retrySession} />;
   }
 
   if (role !== 'entrepreneur') {

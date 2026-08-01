@@ -1,12 +1,15 @@
 const express = require('express');
 const authController = require('../controllers/auth.controller');
 const authMiddleware = require('../middleware/auth.middleware');
-const { authLimiter } = require('../middleware/rateLimit.middleware');
+const { authLimiter, sessionLimiter } = require('../middleware/rateLimit.middleware');
 
 const router = express.Router();
 
-// POST /api/auth/session
-router.post('/session', authLimiter, authMiddleware, authController.createSession);
+// POST /api/auth/session — fires on every app load for an already-signed-in
+// user, not a manual login attempt, so it gets its own more generous limiter
+// (see rateLimit.middleware.js's sessionLimiter comment) rather than sharing
+// authLimiter's tight login/admin-login budget.
+router.post('/session', sessionLimiter, authMiddleware, authController.createSession);
 
 // POST /api/auth/admin-login (master-doc.md Section 16.0/24.4) — Public;
 // this endpoint IS the admin login check, not a route an admin reaches

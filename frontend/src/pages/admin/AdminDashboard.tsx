@@ -1,7 +1,7 @@
 import { Suspense, lazy } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { Store, Sparkles, AlertTriangle, Wallet } from 'lucide-react';
+import { Store, Sparkles, AlertTriangle, Wallet, ArrowRight, BarChart3, Undo2, type LucideIcon } from 'lucide-react';
 import { AdminShell } from '@/components/AdminShell';
 import { Card } from '@/components/Card';
 import { StatCard } from '@/components/StatCard';
@@ -23,7 +23,10 @@ export default function AdminDashboard() {
 
   return (
     <AdminShell>
-      <h1 className="font-display text-h1 font-semibold text-text-primary">Admin Dashboard</h1>
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
+        Platform Overview
+      </span>
+      <h1 className="mt-2 font-display text-h1 font-semibold text-text-primary">Admin Dashboard</h1>
       <p className="mt-1 text-body-m text-text-secondary">Platform-wide health at a glance.</p>
 
       {isError ? (
@@ -52,9 +55,28 @@ export default function AdminDashboard() {
           </div>
 
           <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <NavCard to="/admin/merchants" title="Merchant Management" description="Review, suspend, or reactivate merchant accounts." />
-            <NavCard to="/admin/reports" title="Reports & Analytics" description="Platform-wide reporting and segment analysis." />
-            <NavCard to="/admin/refunds-disputes" title="Refunds & Disputes" description="Monitor refund patterns and resolve disputes." />
+            <NavCard
+              to="/admin/merchants"
+              icon={Store}
+              title="Merchant Management"
+              description="Review, suspend, or reactivate merchant accounts."
+              cta="Manage Merchants"
+            />
+            <NavCard
+              to="/admin/reports"
+              icon={BarChart3}
+              title="Reports & Analytics"
+              description="Platform-wide reporting and segment analysis."
+              cta="View Reports"
+            />
+            <NavCard
+              to="/admin/refunds-disputes"
+              icon={Undo2}
+              title="Refunds & Disputes"
+              description="Monitor refund patterns and resolve disputes."
+              cta="Review Queue"
+              badge={data?.openDisputes != null ? `${data.openDisputes} open` : undefined}
+            />
           </div>
         </>
       )}
@@ -62,13 +84,42 @@ export default function AdminDashboard() {
   );
 }
 
-function NavCard({ to, title, description }: { to: string; title: string; description: string }) {
+function NavCard({
+  to,
+  icon: Icon,
+  title,
+  description,
+  cta,
+  badge,
+}: {
+  to: string;
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  cta: string;
+  badge?: string;
+}) {
   return (
-    <motion.div whileHover={{ y: -2 }} transition={{ duration: 0.15 }}>
-      <Link to={to}>
-        <Card className="flex h-full flex-col gap-1.5 transition-shadow hover:shadow-md">
-          <h3 className="text-body-l font-medium text-text-primary">{title}</h3>
-          <p className="text-body-m text-text-secondary">{description}</p>
+    <motion.div whileHover={{ y: -2 }} transition={{ duration: 0.15 }} className="h-full">
+      <Link to={to} className="block h-full">
+        <Card className="flex h-full flex-col gap-3 transition-shadow hover:shadow-md">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Icon className="h-4.5 w-4.5" />
+            </div>
+            {badge && (
+              <span className="rounded-full bg-warning/15 px-2 py-0.5 text-caption font-medium text-warning">
+                {badge}
+              </span>
+            )}
+          </div>
+          <div className="flex-1">
+            <h3 className="text-body-l font-medium text-text-primary">{title}</h3>
+            <p className="mt-0.5 text-body-m text-text-secondary">{description}</p>
+          </div>
+          <span className="flex items-center gap-1 text-body-m font-medium text-primary">
+            {cta} <ArrowRight className="h-3.5 w-3.5" />
+          </span>
         </Card>
       </Link>
     </motion.div>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ComponentType } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   Minus,
@@ -12,13 +12,71 @@ import {
   Share2,
   CheckCircle2,
   ExternalLink,
-  MessageSquare
+  MessageSquare,
+  ShieldCheck,
+  Sparkles,
+  ShoppingBag,
+  MessageCircle,
+  Building2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
 import { cn } from '@/utils/cn';
 import type { PublicPage, Product } from '@/api/merchants';
+import type { PurchaseRecord } from '@/utils/purchaseSession';
+
+/** Small icon + all-caps tracked label, used above every major storefront section heading. */
+function SectionEyebrow({ icon: Icon, label }: { icon: ComponentType<{ className?: string }>; label: string }) {
+  return (
+    <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-primary">
+      <Icon className="h-3.5 w-3.5" />
+      {label}
+    </div>
+  );
+}
+
+const DAY_LABELS: Record<string, string> = { mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun' };
+const DAY_ORDER = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
+
+function formatHoursTime(t: string): string {
+  const [hStr, mStr] = t.split(':');
+  const h = parseInt(hStr, 10);
+  if (Number.isNaN(h)) return t;
+  const period = h >= 12 ? 'pm' : 'am';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return mStr && mStr !== '00' ? `${h12}:${mStr}${period}` : `${h12}${period}`;
+}
+
+/** Condenses a week of hours into "mon-sat: 8am to 9pm, sun: closed" style, grouping consecutive identical days. */
+function formatBusinessHours(hours: PublicPage['businessHours']): string | null {
+  if (!hours) return null;
+  const lines: { key: string; label: string }[] = [];
+  for (const key of DAY_ORDER) {
+    const day = hours[key];
+    if (!day) continue;
+    const label = day.closed || !day.open || !day.close ? 'closed' : `${formatHoursTime(day.open)} to ${formatHoursTime(day.close)}`;
+    lines.push({ key, label });
+  }
+  if (lines.length === 0) return null;
+
+  const groups: { days: string[]; label: string }[] = [];
+  for (const line of lines) {
+    const last = groups[groups.length - 1];
+    if (last && last.label === line.label) {
+      last.days.push(line.key);
+    } else {
+      groups.push({ days: [line.key], label: line.label });
+    }
+  }
+  return groups
+    .map((g) => {
+      const dayLabel =
+        g.days.length > 1 ? `${DAY_LABELS[g.days[0]]}-${DAY_LABELS[g.days[g.days.length - 1]]}` : DAY_LABELS[g.days[0]];
+      return `${dayLabel}: ${g.label}`;
+    })
+    .join(', ');
+}
 
 function StoreStars({ count }: { count: number }) {
   return (
@@ -45,9 +103,19 @@ interface PublicStoreViewProps {
   mode: 'preview' | 'live';
   onProceed?: (selection: StoreSelection) => void;
   hasPaid?: boolean;
+  /** Items (keyed by product id) already bought this browser session — see frontend/src/utils/purchaseSession.ts. Renders a "Purchased" badge + Buy Again instead of the normal buy button. */
+  purchasedThisSession?: Record<string, PurchaseRecord>;
+  onBuyAgain?: (productId: string) => void;
 }
 
-export function PublicStoreView({ page, mode, onProceed, hasPaid = false }: PublicStoreViewProps) {
+export function PublicStoreView({
+  page,
+  mode,
+  onProceed,
+  hasPaid = false,
+  purchasedThisSession = {},
+  onBuyAgain,
+}: PublicStoreViewProps) {
   const reduceMotion = useReducedMotion();
   const isLive = mode === 'live';
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
@@ -106,103 +174,103 @@ export function PublicStoreView({ page, mode, onProceed, hasPaid = false }: Publ
     : '';
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-8 pb-12">
-      {/* 1. Header Navigation Bar */}
-      <div className="flex items-center justify-between rounded-xl border border-border bg-surface px-4 py-3 shadow-sm">
-        <div className="flex items-center gap-2">
-          {page.logoBase64 ? (
-            <img
-              src={page.logoBase64}
-              alt="Shop Logo"
-              className="h-9 w-9 rounded-full object-cover border border-border"
-            />
-          ) : (
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold">
-              {page.businessName ? page.businessName.charAt(0).toUpperCase() : 'S'}
+    <div className="mx-auto w-full max-w-4xl space-y-10 pb-12">
+      {/* 1. Hero — dark navy brand banner, matching the checkout/receipt modals' chrome */}
+      <div className="overflow-hidden rounded-2xl border border-border shadow-sm">
+        <div className="relative bg-[#0b0f1e] px-6 pb-8 pt-7 text-white sm:px-8">
+          {page.coverBannerBase64 && (
+            <div className="absolute inset-0 opacity-25">
+              <img src={page.coverBannerBase64} alt="" className="h-full w-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#0b0f1e] via-[#0b0f1e]/70 to-[#0b0f1e]/30" />
             </div>
           )}
-          <span className="font-display font-semibold text-text-primary">
-            {page.businessName || 'Merchant Store'}
-          </span>
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-950 px-2 py-0.5 text-[11px] font-medium text-emerald-800 dark:text-emerald-300">
-            <CheckCircle2 className="h-3 w-3 fill-emerald-800 dark:fill-emerald-300 text-emerald-100 dark:text-emerald-950" />
-            Verified Partner
-          </span>
-        </div>
-        <Button variant="ghost" onClick={handleShare} className="flex items-center gap-1.5 text-caption px-3 py-1">
-          <Share2 className="h-3.5 w-3.5" />
-          Share
-        </Button>
-      </div>
-
-      {/* 2. Hero Section (Branded Cover & Details) */}
-      <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
-        {/* Cover Banner */}
-        <div className="relative h-44 w-full bg-gradient-to-br from-primary/15 via-accent/5 to-primary/5 sm:h-56">
-          {page.coverBannerBase64 ? (
-            <img src={page.coverBannerBase64} alt="" className="h-full w-full object-cover" />
-          ) : page.photoBase64 ? (
-            <img src={page.photoBase64} alt="" className="h-full w-full object-cover" />
-          ) : null}
-          <div className="absolute inset-0 bg-gradient-to-t from-surface via-surface/40 to-transparent" />
-        </div>
-
-        {/* Brand details and CTAs */}
-        <div className="relative -mt-16 px-6 pb-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            {/* Left text */}
-            <div className="space-y-2">
-              <h1 className="font-display text-h1 font-bold text-text-primary tracking-tight">
-                {page.businessName || 'Elegant Stitch Tailors'}
-              </h1>
-              {page.tagline && (
-                <p className="text-body-l font-medium text-text-secondary">
-                  {page.tagline}
-                </p>
+          <div className="relative flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex flex-1 items-start gap-4">
+              {page.logoBase64 || page.photoBase64 ? (
+                <img
+                  src={page.logoBase64 || page.photoBase64 || undefined}
+                  alt="Shop Logo"
+                  className="h-16 w-16 shrink-0 rounded-xl border border-white/15 object-cover shadow-lg"
+                />
+              ) : (
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-h2 font-semibold">
+                  {page.businessName ? page.businessName.charAt(0).toUpperCase() : 'S'}
+                </div>
               )}
-              <div className="flex flex-wrap items-center gap-3 text-caption text-text-secondary">
-                <span className="rounded-md bg-bg px-2 py-0.5 font-medium text-primary">
-                  {page.category || 'Tailor Shop'}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Star className="h-3.5 w-3.5 fill-warning text-warning" />
-                  <strong className="text-text-primary">
-                    {page.ratingCount > 0 ? page.ratingAverage.toFixed(1) : '4.9'}
-                  </strong>{' '}
-                  ({page.ratingCount || 12} reviews)
-                </span>
-                {addressString && (
-                  <span className="flex items-center gap-1">
-                    <MapPin className="h-3.5 w-3.5 text-text-secondary" />
-                    {page.address?.city || 'Local Area'}
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white/80">
+                    {page.category || 'Store'}
                   </span>
-                )}
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-medium text-emerald-300">
+                    <CheckCircle2 className="h-3 w-3" />
+                    Surfboard Verified
+                  </span>
+                </div>
+                <h1 className="font-display text-h1 font-bold tracking-tight">
+                  Welcome to {page.businessName || 'our store'}
+                </h1>
+                <p className="max-w-md text-body-m text-white/70">
+                  {page.tagline || 'Discover our products and services, with fast, secure digital payments.'}
+                </p>
               </div>
             </div>
 
-            {/* Right Buttons: WhatsApp & Call */}
-            <div className="flex gap-2">
-              {page.whatsapp && (
-                <a
-                  href={`https://wa.me/${page.whatsapp.replace(/[^0-9]/g, '')}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-[#25D366] bg-[#25D366]/10 px-3 text-[13px] font-medium text-[#25D366] hover:bg-[#25D366] hover:text-white transition-all shadow-sm"
-                >
-                  <MessageSquare className="h-4 w-4" />
-                  WhatsApp
-                </a>
-              )}
-              {page.phone && (
-                <a
-                  href={`tel:${page.phone}`}
-                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-[13px] font-medium text-text-primary hover:bg-bg transition-all shadow-sm"
-                >
-                  <Phone className="h-4 w-4" />
-                  Call Us
-                </a>
-              )}
+            {/* Rating box, top-right */}
+            <div className="flex shrink-0 flex-col items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-5 py-3 text-center">
+              <div className="flex items-center gap-0.5">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <Star
+                    key={n}
+                    className={cn(
+                      'h-3.5 w-3.5',
+                      n <= Math.round(page.ratingAverage || 5) ? 'fill-warning text-warning' : 'text-white/20'
+                    )}
+                  />
+                ))}
+              </div>
+              <span className="text-h2 font-bold">
+                {page.ratingCount > 0 ? page.ratingAverage.toFixed(1) : '—'}
+              </span>
+              <span className="text-[11px] text-white/60">{page.ratingCount || 0} Customer Reviews</span>
             </div>
+          </div>
+
+          <div className="relative mt-6 flex flex-wrap items-center gap-2">
+            {page.whatsapp && (
+              <a
+                href={`https://wa.me/${page.whatsapp.replace(/[^0-9]/g, '')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-[#25D366]/40 bg-[#25D366]/15 px-3 text-[13px] font-medium text-[#4ade80] hover:bg-[#25D366]/25 transition-all"
+              >
+                <MessageSquare className="h-4 w-4" />
+                WhatsApp
+              </a>
+            )}
+            {page.phone && (
+              <a
+                href={`tel:${page.phone}`}
+                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3 text-[13px] font-medium text-white hover:bg-white/10 transition-all"
+              >
+                <Phone className="h-4 w-4" />
+                Call Us
+              </a>
+            )}
+            {addressString && (
+              <span className="inline-flex h-9 items-center gap-1.5 px-1 text-[13px] text-white/60">
+                <MapPin className="h-3.5 w-3.5" />
+                {page.address?.city || addressString}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleShare}
+              className="ml-auto inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3 text-[13px] font-medium text-white hover:bg-white/10 transition-all"
+            >
+              <Share2 className="h-3.5 w-3.5" />
+              Share
+            </button>
           </div>
         </div>
       </div>
@@ -215,7 +283,7 @@ export function PublicStoreView({ page, mode, onProceed, hasPaid = false }: Publ
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: reduceMotion ? 0 : 0.25 }}
-            className="rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 text-body-m text-warning-strong flex items-center gap-2"
+            className="rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 text-body-m text-text-primary flex items-center gap-2"
           >
             <span className="flex h-2.5 w-2.5 shrink-0 rounded-full bg-warning" />
             <span>This partner is not currently accepting orders. Checkout remains disabled.</span>
@@ -224,46 +292,59 @@ export function PublicStoreView({ page, mode, onProceed, hasPaid = false }: Publ
       </AnimatePresence>
 
       {/* 3. About Us Section */}
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-        <Card className="flex flex-col gap-2 p-6 justify-between">
-          <div>
-            <h2 className="font-display text-h3 font-semibold text-text-primary mb-2">Business Description</h2>
+      <div className="space-y-4">
+        <div className="space-y-1.5">
+          <SectionEyebrow icon={Sparkles} label={`About ${page.businessName || 'this store'}`} />
+          <h2 className="font-display text-h2 font-semibold text-text-primary">
+            Crafted with Passion &amp; Dedicated to Excellence
+          </h2>
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-[1.4fr_1fr]">
+          <Card className="flex flex-col justify-center bg-bg p-6">
             <p className="text-body-m text-text-secondary leading-relaxed">
               {page.description ||
                 "Welcome to our store! We specialize in custom services and alterations designed to fit your unique requirements. Every job is done with precision and a guarantee of premium quality."}
             </p>
+          </Card>
+          <div className="flex flex-col gap-3">
+            <Card className="flex items-start gap-3 p-4">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <ShieldCheck className="h-4.5 w-4.5" />
+              </div>
+              <div>
+                <p className="font-semibold text-text-primary text-[14px]">Verified Quality</p>
+                <p className="text-caption text-text-secondary">Strict quality controls and authentic customer satisfaction.</p>
+              </div>
+            </Card>
+            <Card className="flex items-start gap-3 border-secondary/30 bg-secondary/5 p-4">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-secondary/15 text-secondary">
+                <ShieldCheck className="h-4.5 w-4.5" />
+              </div>
+              <div>
+                <p className="font-semibold text-text-primary text-[14px]">Digital PayLink Checkout</p>
+                <p className="text-caption text-text-secondary">Instant payment links and QR code checkouts supported.</p>
+              </div>
+            </Card>
           </div>
-        </Card>
-        <Card className="p-6">
-          <h2 className="font-display text-h3 font-semibold text-text-primary mb-3">Why Choose Us</h2>
-          <ul className="space-y-2.5 text-body-m text-text-secondary">
-            {[
-              'Premium quality materials & dedicated attention to detail',
-              'Experienced craftsmen with years of alteration experience',
-              'Fast turnarounds & reliable customer service',
-              'Flexible options catering directly to custom design needs'
-            ].map((point, index) => (
-              <li key={index} className="flex items-start gap-2.5">
-                <CheckCircle2 className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                <span>{point}</span>
-              </li>
-            ))}
-          </ul>
-        </Card>
+        </div>
       </div>
 
       {/* 4. Services Grid */}
       <div className="space-y-4">
-        <h2 className="font-display text-h2 font-semibold text-text-primary">Services</h2>
+        <SectionEyebrow icon={ShoppingBag} label="Products & Offerings" />
         {isEmpty ? (
           <Card className="flex flex-col items-center gap-2 py-12 text-center">
             <PackageX className="h-8 w-8 text-text-secondary" aria-hidden />
-            <p className="text-body-m text-text-secondary">No services added to the catalog yet.</p>
+            <p className="font-medium text-text-primary">No products listed yet</p>
+            <p className="text-body-m text-text-secondary">
+              {(page.businessName || 'This store') + ' has not added any products to their catalog.'}
+            </p>
           </Card>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {page.items.map((item, i) => {
               const isSelected = selectedItemId === item.id;
+              const purchased = purchasedThisSession[item.id];
               return (
                 <motion.div
                   key={item.id}
@@ -321,8 +402,25 @@ export function PublicStoreView({ page, mode, onProceed, hasPaid = false }: Publ
                     </div>
 
                     {isLive && !hasPaid && (
-                      <div className="mt-4 pt-3 border-t border-border/40">
-                        {isSelected ? (
+                      <div className="mt-4 pt-3 border-t border-border/40" onClick={(e) => purchased && e.stopPropagation()}>
+                        {purchased ? (
+                          <div className="flex flex-col gap-2">
+                            <div className="flex w-fit items-center gap-1.5 rounded-full bg-secondary/10 px-2.5 py-1 text-caption font-semibold text-secondary">
+                              <CheckCircle2 className="h-3.5 w-3.5" /> Purchased
+                            </div>
+                            <p className="text-caption text-text-secondary">
+                              Paid {new Date(purchased.paidAt).toLocaleDateString()}
+                              {purchased.transactionId ? ` · Txn ${purchased.transactionId.slice(0, 10).toUpperCase()}` : ''}
+                            </p>
+                            <Button
+                              variant="ghost"
+                              className="w-full py-1.5 text-caption"
+                              onClick={() => onBuyAgain?.(item.id)}
+                            >
+                              Buy Again
+                            </Button>
+                          </div>
+                        ) : isSelected ? (
                           <div
                             className="flex items-center justify-between rounded-lg bg-bg px-2.5 py-1.5"
                             onClick={(e) => e.stopPropagation()}
@@ -462,36 +560,36 @@ export function PublicStoreView({ page, mode, onProceed, hasPaid = false }: Publ
       {/* 7. Reviews Section */}
       {page.reviews && page.reviews.length > 0 && (
         <div className="space-y-4">
-          <h2 className="font-display text-h2 font-semibold text-text-primary">Customer Reviews</h2>
-          <Card className="p-6 border border-border">
-            <div className="flex items-center gap-3 border-b border-border/40 pb-4 mb-4">
-              <span className="text-h1 font-bold text-text-primary">
-                {page.ratingCount > 0 ? page.ratingAverage.toFixed(1) : '4.9'}
-              </span>
-              <div className="space-y-1">
-                <StoreStars count={Math.round(page.ratingAverage || 5)} />
-                <p className="text-caption text-text-secondary">
-                  Based on {page.ratingCount || 12} customer reviews
+          <SectionEyebrow icon={MessageCircle} label="Customer feedback" />
+          <h2 className="font-display text-h2 font-semibold text-text-primary">
+            What Customers Say About {page.businessName || 'Us'}
+          </h2>
+          <Card className="border border-border p-6">
+            <div className="mb-4 flex items-center justify-between border-b border-border/40 pb-4">
+              <div>
+                <p className="font-semibold text-text-primary">Verified Ratings ({page.reviews.length})</p>
+                <p className="text-caption text-text-secondary">Real-time customer feedback from Firestore</p>
+              </div>
+              <div className="text-right">
+                <p className="text-h2 font-bold text-text-primary">
+                  {page.ratingCount > 0 ? `${page.ratingAverage.toFixed(1)} / 5` : '— / 5'}
                 </p>
+                <p className="text-caption text-text-secondary">{page.ratingCount || page.reviews.length} total reviews</p>
               </div>
             </div>
             <div className="flex flex-col gap-4 divide-y divide-border/40">
               {page.reviews.map((review, i) => (
-                <div key={i} className={i > 0 ? 'pt-4' : undefined}>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[13px] font-semibold text-text-primary">
-                      Verified Client
-                    </span>
-                    <span className="text-caption text-text-secondary">
+                <div key={i} className={cn('flex items-center justify-between gap-4', i > 0 && 'pt-4')}>
+                  <div>
+                    <p className="text-[13px] font-semibold text-text-primary">Valued Customer</p>
+                    <p className="text-caption text-text-secondary">
                       {review.createdAt ? new Date(review.createdAt).toLocaleDateString() : 'Recently'}
-                    </span>
+                    </p>
+                    {review.comment && (
+                      <p className="mt-1 text-body-m text-text-secondary leading-relaxed">"{review.comment}"</p>
+                    )}
                   </div>
                   <StoreStars count={review.stars} />
-                  {review.comment && (
-                    <p className="mt-2 text-body-m text-text-secondary leading-relaxed">
-                      "{review.comment}"
-                    </p>
-                  )}
                 </div>
               ))}
             </div>
@@ -499,104 +597,90 @@ export function PublicStoreView({ page, mode, onProceed, hasPaid = false }: Publ
         </div>
       )}
 
-      {/* 8. Business Information & Map */}
+      {/* 8. Contact & Operating Info */}
       <div className="space-y-4">
-        <h2 className="font-display text-h2 font-semibold text-text-primary">Business Information</h2>
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          {/* Info Card */}
-          <Card className="p-6 space-y-4 border border-border">
-            <h3 className="font-display text-h3 font-semibold text-text-primary border-b border-border/40 pb-2 mb-2">
-              Contact & Hours
-            </h3>
-            
-            <div className="space-y-3.5 text-body-m text-text-secondary">
-              <div className="flex items-start gap-3">
-                <Clock className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-medium text-text-primary">Working Hours</p>
-                  <p className="text-caption">Mon - Fri: 10:00 AM - 6:00 PM</p>
-                  <p className="text-caption">Sat: 10:00 AM - 2:00 PM (Sunday Closed)</p>
-                </div>
-              </div>
-
-              {page.phone && (
-                <div className="flex items-center gap-3">
-                  <Phone className="h-4 w-4 text-primary shrink-0" />
-                  <div>
-                    <p className="font-medium text-text-primary">Phone Number</p>
-                    <a href={`tel:${page.phone}`} className="text-caption text-primary hover:underline">
-                      {page.phone}
-                    </a>
-                  </div>
-                </div>
-              )}
-
-              {page.email && (
-                <div className="flex items-center gap-3">
-                  <Mail className="h-4 w-4 text-primary shrink-0" />
-                  <div>
-                    <p className="font-medium text-text-primary">Email Address</p>
-                    <a href={`mailto:${page.email}`} className="text-caption text-primary hover:underline">
-                      {page.email}
-                    </a>
-                  </div>
-                </div>
-              )}
-
-              {addressString && (
-                <div className="flex items-start gap-3">
-                  <MapPin className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-medium text-text-primary">Address Location</p>
-                    <p className="text-caption">{addressString}</p>
-                  </div>
-                </div>
+        <SectionEyebrow icon={Building2} label="Contact & Operating Info" />
+        <h2 className="font-display text-h2 font-semibold text-text-primary">Visit Us or Get in Touch</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Card className="flex flex-col items-start gap-3 border border-border p-5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-bg text-text-secondary">
+              <MapPin className="h-4.5 w-4.5" />
+            </div>
+            <div>
+              <p className="font-semibold text-text-primary text-[14px]">Location</p>
+              <p className="text-caption text-text-secondary">{addressString || 'Not provided'}</p>
+            </div>
+          </Card>
+          <Card className="flex flex-col items-start gap-3 border border-border p-5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-bg text-text-secondary">
+              <Phone className="h-4.5 w-4.5" />
+            </div>
+            <div>
+              <p className="font-semibold text-text-primary text-[14px]">Phone Number</p>
+              {page.phone ? (
+                <a href={`tel:${page.phone}`} className="text-caption text-primary hover:underline">
+                  {page.phone}
+                </a>
+              ) : (
+                <p className="text-caption text-text-secondary">Not provided</p>
               )}
             </div>
           </Card>
-
-          {/* Map Card */}
-          <Card className="p-0 overflow-hidden border border-border shadow-sm flex flex-col justify-between">
-            <div className="bg-bg/50 p-4 border-b border-border flex items-center justify-between">
-              <span className="text-caption font-semibold text-text-primary">Find Us on Maps</span>
-              {page.googleMapsUrl && (
-                <a
-                  href={page.googleMapsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-caption text-primary flex items-center gap-1 hover:underline"
-                >
-                  Open Maps
-                  <ExternalLink className="h-3 w-3" />
+          <Card className="flex flex-col items-start gap-3 border border-border p-5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-bg text-text-secondary">
+              <Mail className="h-4.5 w-4.5" />
+            </div>
+            <div>
+              <p className="font-semibold text-text-primary text-[14px]">Email Address</p>
+              {page.email ? (
+                <a href={`mailto:${page.email}`} className="text-caption text-primary hover:underline">
+                  {page.email}
                 </a>
+              ) : (
+                <p className="text-caption text-text-secondary">Not provided</p>
               )}
             </div>
-            
-            <div className="flex-1 min-h-[180px] bg-gradient-to-br from-bg via-slate-100 dark:via-slate-900 to-bg flex flex-col items-center justify-center p-6 text-center space-y-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <MapPin className="h-6 w-6" />
-              </div>
-              <div className="space-y-1 max-w-xs">
-                <p className="text-caption font-semibold text-text-primary">
-                  {page.businessName || 'Elegant Stitch Tailors'} Location
-                </p>
-                <p className="text-[11px] text-text-secondary">
-                  {addressString || 'Sweden, Nordic Region'}
-                </p>
-              </div>
+          </Card>
+          <Card className="flex flex-col items-start gap-3 border border-border p-5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-bg text-text-secondary">
+              <Clock className="h-4.5 w-4.5" />
+            </div>
+            <div>
+              <p className="font-semibold text-text-primary text-[14px]">Working Hours</p>
+              <p className="text-caption text-text-secondary">{formatBusinessHours(page.businessHours) || 'Not provided'}</p>
             </div>
           </Card>
         </div>
+        {page.googleMapsUrl && (
+          <a
+            href={page.googleMapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-caption font-medium text-primary hover:underline"
+          >
+            Open in Google Maps <ExternalLink className="h-3 w-3" />
+          </a>
+        )}
       </div>
 
       {/* 9. Branded Footer */}
-      <div className="border-t border-border/40 pt-6 text-center text-caption text-text-secondary space-y-2">
-        <div className="flex justify-center gap-4">
-          <span className="hover:text-text-primary cursor-pointer">Privacy Policy</span>
-          <span>&middot;</span>
-          <span className="hover:text-text-primary cursor-pointer">Terms of Service</span>
+      <div className="-mx-4 flex flex-col items-center justify-between gap-3 bg-[#0b0f1e] px-6 py-6 text-center text-caption text-white/60 sm:mx-0 sm:flex-row sm:rounded-2xl sm:text-left">
+        <div className="flex items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-[13px] font-bold text-white">
+            {page.businessName ? page.businessName.charAt(0).toUpperCase() : 'P'}
+          </div>
+          <div>
+            <p className="font-semibold text-white">{page.businessName || 'Merchant Store'}</p>
+            <p className="text-[11px] text-white/50">{page.category || 'Store'}</p>
+          </div>
         </div>
-        <p>Powered by <strong className="text-primary">PayLink</strong> &bull; Secure Payments &bull; No Card Storage</p>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <span className="inline-flex items-center gap-1.5 text-emerald-400">
+            <ShieldCheck className="h-3.5 w-3.5" /> Surfboard Payments Secured
+          </span>
+          <span className="hidden sm:inline">&middot;</span>
+          <span>&copy; {new Date().getFullYear()} {page.businessName || 'Merchant'}. Powered by PayLink.</span>
+        </div>
       </div>
     </div>
   );

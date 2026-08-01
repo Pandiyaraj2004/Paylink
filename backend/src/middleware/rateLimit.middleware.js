@@ -16,6 +16,30 @@ const authLimiter = rateLimit({
 });
 
 /**
+ * Rate limiter for POST /api/auth/session (live-testing finding, not in the
+ * original doc): this endpoint requires an already-valid Firebase ID token
+ * (authMiddleware runs before it) and fires automatically on every single
+ * app load for an already-signed-in user — every page refresh, every new
+ * tab, every browser restart — not a manual login attempt. Sharing
+ * authLimiter's 5-per-15-minutes budget with it meant a merchant could get
+ * locked out of their own dashboard just from normal browser refresh
+ * behavior (reproduced live: a handful of ordinary page reloads tripped it).
+ * Brute-forcing this endpoint means brute-forcing a Firebase ID token first,
+ * which Firebase's own auth already guards — so a much larger budget is
+ * appropriate here, distinct from the genuine credential-guessing surface
+ * admin-login remains on.
+ */
+const sessionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res, next) => {
+    next(new AppError(429, 'RATE_LIMITED', 'Too many requests. Please try again later.'));
+  },
+});
+
+/**
  * Rate limiter for AI-adjacent endpoints (Section 22.8, 28.3):
  * ~20 requests per 15 minutes per IP, to control AI API cost exposure.
  */
@@ -65,4 +89,4 @@ const publicWriteLimiter = rateLimit({
   },
 });
 
-module.exports = { authLimiter, aiLimiter, checkoutLimiter, publicWriteLimiter };
+module.exports = { authLimiter, sessionLimiter, aiLimiter, checkoutLimiter, publicWriteLimiter };

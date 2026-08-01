@@ -2,13 +2,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { Download, QrCode } from 'lucide-react';
+import { Download, MessageCircle, QrCode } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
 import { Skeleton } from '@/components/Skeleton';
 import { PaymentLinkForm, type PaymentLinkResult } from '@/components/PaymentLinkForm';
 import { useMerchant, usePublicPage } from '@/hooks/useMerchant';
+import { buildWhatsAppShareUrl } from '@/utils/whatsapp';
 
 type QRComponentType = React.ComponentType<{ value: string; size?: number; level?: string }>;
 
@@ -46,6 +47,14 @@ export default function QRPayments() {
       cancelled = true;
     };
   }, []);
+
+  const handleShareWhatsApp = () => {
+    if (!link.url) return;
+    const businessName = merchant?.businessName || 'us';
+    const shareText = `Pay ${businessName} — ${link.url}`;
+    const waUrl = buildWhatsAppShareUrl(link.phone, shareText);
+    window.open(waUrl, '_blank', 'noopener,noreferrer');
+  };
 
   const handleDownloadQR = () => {
     const canvas = qrWrapRef.current?.querySelector('canvas') ?? null;
@@ -94,7 +103,10 @@ export default function QRPayments() {
 
   return (
     <AppShell>
-      <h1 className="font-display text-h1 font-semibold text-text-primary">QR Payments</h1>
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
+        In-Person Checkout
+      </span>
+      <h1 className="mt-2 font-display text-h1 font-semibold text-text-primary">QR Payments</h1>
       <p className="mt-1 text-body-m text-text-secondary">
         Generate a QR code for a product or a custom amount, for a customer to scan and pay in person.
       </p>
@@ -152,6 +164,9 @@ export default function QRPayments() {
               loading={downloading}
             >
               <Download className="h-4 w-4" /> Download QR
+            </Button>
+            <Button variant="ghost" className="w-full" onClick={handleShareWhatsApp} disabled={!link.url}>
+              <MessageCircle className="h-4 w-4" /> Share via WhatsApp
             </Button>
           </Card>
         </motion.div>

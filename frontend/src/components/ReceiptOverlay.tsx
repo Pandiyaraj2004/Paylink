@@ -22,12 +22,12 @@ export interface ReceiptOverlayProps {
  */
 export function ReceiptOverlay({ orderId, onDismiss, onRetry, slug }: ReceiptOverlayProps) {
   return (
-    <Modal open onOpenChange={(open) => !open && onDismiss()} title="Order status" className="sm:max-w-sm">
+    <Modal open onOpenChange={(open) => !open && onDismiss()} title="Order status" variant="branded" className="sm:max-w-sm">
       <ReceiptContent
         orderId={orderId}
         variant="overlay"
         onContinue={onDismiss}
-        continueLabel="Continue browsing"
+        continueLabel="Continue Browsing"
         onRetry={onRetry}
         slug={slug}
       />

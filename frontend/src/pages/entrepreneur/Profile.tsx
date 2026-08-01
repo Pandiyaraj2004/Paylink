@@ -308,7 +308,10 @@ export default function Profile() {
     <AppShell>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="font-display text-h1 font-semibold text-text-primary">Profile</h1>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
+            Storefront Identity
+          </span>
+          <h1 className="mt-2 font-display text-h1 font-semibold text-text-primary">Profile</h1>
           <p className="mt-1 text-body-m text-text-secondary">
             Edit how your storefront presents itself — changes go live on your public page immediately.
           </p>
