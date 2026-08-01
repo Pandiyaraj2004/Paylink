@@ -64,11 +64,12 @@ function getConfig() {
     SURFBOARD_TERMINAL_ID: terminalId,
     SURFBOARD_STORE_ID: storeId,
     SURFBOARD_CALLBACK_URL: callBackUrl,
+    SURFBOARD_PARTNER_ID: partnerId,
   } = env;
   if (!apiKey || !apiSecret || !baseUrl || !merchantId || !terminalId) {
     return null;
   }
-  return { apiKey, apiSecret, baseUrl, merchantId, terminalId, storeId, callBackUrl };
+  return { apiKey, apiSecret, baseUrl, merchantId, terminalId, storeId, callBackUrl, partnerId };
 }
 
 function sleep(ms) {
@@ -377,6 +378,49 @@ function verifyWebhookSignature(rawBody, signatureHeader) {
   return { configured: true, valid };
 }
 
+/**
+ * Fetch Settlement Reports (web-guides/settlements-reporting.md:
+ * `GET /partners/:partnerId/merchants/:merchantId/reports`) — payout-batch
+ * summaries (totalSale/totalRefund/fee/payout/settlementDate) for the whole
+ * shared merchant account. Used only as a supplementary, read-only
+ * cross-check on the Admin Settlement Management page
+ * (payout.service.js's getSurfboardSettlementReports) — PayLink's own
+ * per-entrepreneur payout ledger (payoutBatch.repository.js) is computed
+ * entirely from PayLink's own order/refund data and never depends on this
+ * call succeeding.
+ *
+ * This is PARTNER-level Surfboard access, a separate credential tier from
+ * the merchant-level API-KEY/API-SECRET this file's other methods use — not
+ * automatically included on a free/sandbox developer account. Fails the
+ * same clean, gracefully-degrading way as checkConnection() when
+ * unconfigured, rather than throwing a hard error the caller has to guard
+ * against everywhere.
+ */
+async function getSettlementReports({ from, to } = {}) {
+  const config = getConfig();
+  if (!config || !config.partnerId) {
+    return { configured: false };
+  }
+
+  try {
+    const query = new URLSearchParams();
+    if (from) query.set('startDate', from);
+    if (to) query.set('endDate', to);
+    const qs = query.toString();
+    const envelope = await withRetry(() =>
+      callSurfboard(
+        config,
+        'GET',
+        `/partners/${config.partnerId}/merchants/${config.merchantId}/reports${qs ? `?${qs}` : ''}`,
+        null
+      )
+    );
+    return { configured: true, ok: true, reports: envelope.data };
+  } catch (err) {
+    return { configured: true, ok: false, error: err.message };
+  }
+}
+
 module.exports = {
   createOrder,
   initiatePayment,
@@ -386,4 +430,5 @@ module.exports = {
   verifyWebhookSignature,
   toNumericCurrency,
   mapPaymentMethod,
+  getSettlementReports,
 };

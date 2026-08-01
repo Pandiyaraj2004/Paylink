@@ -18,6 +18,7 @@ const OnboardingPreview = lazy(() => import('@/pages/entrepreneur/OnboardingPrev
 const Products = lazy(() => import('@/pages/entrepreneur/Products'));
 const Orders = lazy(() => import('@/pages/entrepreneur/Orders'));
 const Payments = lazy(() => import('@/pages/entrepreneur/Payments'));
+const Payouts = lazy(() => import('@/pages/entrepreneur/Payouts'));
 const PaymentLinks = lazy(() => import('@/pages/entrepreneur/PaymentLinks'));
 const QRPayments = lazy(() => import('@/pages/entrepreneur/QRPayments'));
 const Customers = lazy(() => import('@/pages/entrepreneur/Customers'));
@@ -66,6 +67,10 @@ export function AppRoutes() {
             {/* Section 14.5 — the raw financial ledger, promoted out of
                 Orders' former Transactions tab into its own page. */}
             <Route path="/app/payments" element={<Payments />} />
+            {/* Payout & Settlement Management module (new) — what's owed from
+                paid orders, what's clearing its settlement reserve, and a
+                history of every past payout. */}
+            <Route path="/app/payouts" element={<Payouts />} />
             {/* Sections 14.6/14.7 — merchant-initiated payment link/QR
                 generators, both pure client-side wrappers around the
                 existing /pay/:slug?pay=... shared-link format. */}

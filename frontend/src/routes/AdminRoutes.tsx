@@ -11,6 +11,7 @@ const AdminDashboard = lazy(() => import('@/pages/admin/AdminDashboard'));
 const MerchantManagement = lazy(() => import('@/pages/admin/MerchantManagement'));
 const ReportsAnalytics = lazy(() => import('@/pages/admin/ReportsAnalytics'));
 const RefundsDisputes = lazy(() => import('@/pages/admin/RefundsDisputes'));
+const SettlementManagement = lazy(() => import('@/pages/admin/SettlementManagement'));
 const System = lazy(() => import('@/pages/admin/System'));
 const AdminSettings = lazy(() => import('@/pages/admin/AdminSettings'));
 
@@ -20,6 +21,7 @@ export const adminRoutes = (
     <Route path="merchants" element={<MerchantManagement />} />
     <Route path="reports" element={<ReportsAnalytics />} />
     <Route path="refunds-disputes" element={<RefundsDisputes />} />
+    <Route path="settlements" element={<SettlementManagement />} />
     <Route path="system" element={<System />} />
     <Route path="settings" element={<AdminSettings />} />
   </Route>

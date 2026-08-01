@@ -61,7 +61,7 @@ Open **http://localhost:5173** — that's the whole app. The backend has no sepa
 ```bash
 npm run test:backend   # or: cd backend && npm test
 ```
-149 tests across 26 suites, using an in-memory Firestore stub (no real Firebase project needed to run tests).
+168 tests across 28 suites, using an in-memory Firestore stub (no real Firebase project needed to run tests).
 
 ---
 
@@ -78,6 +78,8 @@ The single consolidated `.env` file at the root folder contains all configuratio
 | `SURFBOARD_API_KEY` / `SURFBOARD_API_SECRET` / `SURFBOARD_API_BASE_URL` / `SURFBOARD_MERCHANT_ID` / `SURFBOARD_STORE_ID` / `SURFBOARD_TERMINAL_ID` | Real payments | Leave blank to get a clean `503 PROVIDER_UNAVAILABLE` on payment attempts instead of a crash. |
 | `SURFBOARD_WEBHOOK_CERTIFICATE` | Webhook payment completion | Generated in the Surfboard Console. Without it, payments resolve via the polling controller instead. |
 | `SURFBOARD_ACTIVE_CURRENCIES` / `SURFBOARD_ACTIVE_PAYMENT_METHODS` | Checkout validation | e.g. `SEK` and `card`. |
+| `PAYOUT_RESERVE_DAYS` | Payout & Settlement Management ([Section 10](#10-payout--settlement-management)) | Days a paid order's settlement reserve holds before its payout batch becomes eligible. Defaults to `3`. |
+| `SURFBOARD_PARTNER_ID` | Optional Surfboard Settlement Reports panel | Partner-level credential, separate from the merchant-level keys above — leave blank to skip that panel entirely (it degrades gracefully). |
 | `ADMIN_ACCESS_CODE` / `ADMIN_PASSWORD` / `ADMIN_JWT_SECRET` | Admin login | Dev default is `pandisabi` / `pandisabi` with a custom secret keyset. Change before deploying to production. |
 | `VITE_API_BASE_URL` | Frontend API | Defaults to `http://localhost:4000/api`. |
 | `VITE_FIREBASE_*` | Frontend Firebase | Standard Firebase Web Client config keys. |
@@ -107,6 +109,7 @@ The single consolidated `.env` file at the root folder contains all configuratio
 | `/app/products` | Products | Catalog management + a Preview & Share tab (copy link / QR / poster for the *whole store*) |
 | `/app/orders` | Orders | Orders + Refunds tabs |
 | `/app/payments` | Payments | Raw payment/refund ledger with Surfboard reference IDs, CSV export |
+| `/app/payouts` | Payouts | Pending/eligible/paid balance from your paid orders, and a full payout history — see [Section 10](#10-payout--settlement-management) |
 | `/app/payment-links` | Payment Links | Generate a link for one specific product or a custom amount, share via copy or one-tap WhatsApp |
 | `/app/qr-payments` | QR Payments | Same generator, rendered as a downloadable QR code — also has its own one-tap "Share via WhatsApp" button (sends the same underlying link the QR encodes) |
 | `/app/customers` | Customers | Repeat customers (2+ orders) only — not a full CRM |
@@ -131,6 +134,7 @@ The single consolidated `.env` file at the root folder contains all configuratio
 | `/admin/merchants` | Merchant Management |
 | `/admin/reports` | Reports & Analytics |
 | `/admin/refunds-disputes` | Refunds & Disputes |
+| `/admin/settlements` | Settlement Management — see [Section 10](#10-payout--settlement-management) |
 | `/admin/system` | System (logs, monitoring) |
 | `/admin/settings` | Platform Settings |
 
@@ -190,7 +194,7 @@ Concrete input → expected output for each major flow. Run these against a real
 | 10 | On the storefront, complete checkout with a Surfboard demo card | Redirected to Surfboard's hosted page, then back to `/pay/:slug/receipt/:orderId` showing a success card with merchant name, amount, transaction ID, order ID, date |
 | 11 | On the receipt page, submit a 4-star rating with a comment | Toast confirms; reload the merchant's **Reviews** page → the review appears with the correct star count, comment, and order link; reload the storefront → "Customer reviews" section shows it (without any customer name) |
 | 12 | Repeat checkout as the *same* phone number a second time | Go to **Customers** → that phone number now appears with `orderCount: 2` and a real `totalSpent` |
-| 13 | Click that customer row | Navigates to `/app/orders?customer=<ref>` with a "Showing orders for this customer only" banner — **requires the composite index in Section 11 below to be deployed first**, otherwise this (and the Orders page's status filter dropdown) will show a friendly "Could not load your orders" error instead of the filtered list |
+| 13 | Click that customer row | Navigates to `/app/orders?customer=<ref>` with a "Showing orders for this customer only" banner — **requires the composite index in Section 12 below to be deployed first**, otherwise this (and the Orders page's status filter dropdown) will show a friendly "Could not load your orders" error instead of the filtered list |
 | 14 | Go to **Orders → Refunds**, issue a partial refund on a paid order | Order status becomes `partially_refunded`; check **Payments** page → a matching `refund` ledger row appears with a Surfboard reference ID |
 | 15 | Go to **Analytics**, click the **"Best seller"** quick-question chip | A real answer naming your actual top-selling product, computed server-side (never invented by the AI) |
 | 16 | Go to **Help**, search for "bank" | FAQ list filters to the bank-details-related article only |
@@ -201,6 +205,8 @@ Concrete input → expected output for each major flow. Run these against a real
 | 21 | Click **Pay Now**, then before completing on Surfboard's page, click the browser **Back** button, then click **Pay Now** again | Only **one** order is created for this checkout (verify in **Payments** or via `POST /api/orders` in the Network tab — it fires once, not twice); the second attempt reuses the same order and just requests a fresh payment link for it |
 | 22 | Complete a real payment, then on the receipt click **Continue Browsing** | Returns to the full storefront; the product just bought now shows a green **Purchased** badge with the paid date and transaction ID instead of a buy button — every other product stays normally purchasable |
 | 23 | Click **Buy Again** on that purchased product's card | Opens a fresh, unlocked checkout for the same product — a genuinely new order, not the old one |
+| 24 | As Admin, go to **Settlement Management**, click **Recalculate** | A new `pending` payout batch appears per entrepreneur with paid orders since their last cursor position, netted for any refunds; the per-entrepreneur breakdown table and platform totals update to match |
+| 25 | As that entrepreneur, go to **Payouts** | The same balance shows under "Pending reserve," with the reserve-day count noted; it stays pending until `PAYOUT_RESERVE_DAYS` elapses or Surfboard confirms settlement, then click **Mark as Paid** (Admin) on an eligible batch → status flips to `paid`, an in-app notification fires to the entrepreneur, and it now shows under "Total paid (lifetime)" on both sides |
 
 ---
 
@@ -209,7 +215,7 @@ Concrete input → expected output for each major flow. Run these against a real
 ```bash
 cd backend && npm test
 ```
-Runs the full Jest suite (149 tests / 26 suites) against an in-memory Firestore stub — covers auth, merchant CRUD, onboarding, orders/payments/refunds, webhook signature verification and idempotency, notifications, the AI Earnings Assistant's deterministic figures (including a regression test for the profile-question misrouting bug), admin login/role-gating, and disputes.
+Runs the full Jest suite (168 tests / 28 suites) against an in-memory Firestore stub — covers auth, merchant CRUD, onboarding, orders/payments/refunds, webhook signature verification and idempotency, notifications, the AI Earnings Assistant's deterministic figures (including a regression test for the profile-question misrouting bug), admin login/role-gating, disputes, and the Payout & Settlement Management module (batch calculation/promotion, mark-as-paid state transitions, ownership checks on both the merchant and admin sides).
 
 The frontend has no separate test runner configured yet — verify it via `cd frontend && npx tsc --noEmit` (type safety) plus the manual script above (actual behavior). `npm run build` in `frontend/` runs the same type-check as part of the production build.
 
@@ -265,7 +271,46 @@ For completeness, the rest of the checkout/refund path was independently re-veri
 
 ---
 
-## 10. Security posture
+## 10. Payout & Settlement Management
+
+A new module answering "who actually pays the entrepreneur, and when" — built entirely as a read/aggregate layer on top of the existing, unmodified Surfboard payment/webhook/refund flow (`payment.service.js`, `refund.service.js`, `surfboard.service.js` are untouched). Two new backend files own it end to end: `repositories/payoutBatch.repository.js` (data access) and `services/payout.service.js` (the calculation/eligibility logic, with a `jobs/settlementPayout.job.js` thin wrapper — no scheduler is wired up, same posture as the existing payment-reconciliation job, so it runs on-demand via the Admin Settlement Management page's **Recalculate** button).
+
+### 10.1 Why this exists
+
+PayLink uses a single shared Surfboard Merchant/Store/Terminal (Section 8) — Surfboard settles the pooled total from every entrepreneur's sales into **one** bank account (PayLink's own), never per-entrepreneur, because Surfboard has no concept of individual entrepreneurs at all. Paying each entrepreneur their actual share was a real, previously undocumented gap: `jobs/settlementPayout.job.js` was a stub, and the Bank Details tab's `payout/details` subcollection only ever stored bank info, never moved money. This module closes the "how much does each entrepreneur owe, and is it safe to pay yet" half of that gap — the actual bank transfer is a deliberate placeholder (Section 10.4).
+
+### 10.2 The model — three states, per payout batch
+
+Paid orders are periodically bundled into `payoutBatches/{id}` documents (a new top-level Firestore collection, `payoutBatches`, plus a `payoutCursors/{merchantId}` watermark collection tracking which orders have already been claimed by a batch so a recalculation run never double-counts one):
+
+```
+pending  →  eligible  →  paid
+```
+
+- **pending** — `netAmount` (gross paid orders minus their committed refunds, using the same `netRevenue`/`REVENUE_ORDER_STATUSES` helper the Admin Reports/Analytics pages already share) has been calculated for a merchant's newly-captured orders since their last cursor position, but the settlement reserve hasn't cleared yet.
+- **eligible** — promoted once *either* the configurable reserve period elapses (`PAYOUT_RESERVE_DAYS`, default 3 days — "a brief reserve" per the original spec) *or* Surfboard's own Fetch Order Status API confirms every underlying payment's `settlementStatus` is `SETTLED`, whichever comes first. The settlement check is best-effort and never blocks the reserve-period fallback — sandbox/demo environments don't reliably populate `settlementStatus`, so this degrades gracefully the same way every other `surfboard.service.js` caller does.
+- **paid** — an admin has manually confirmed, via Settlement Management, that the transfer actually happened. This only records the fact; nothing here moves real money (Section 10.4).
+
+A refund landing *after* a batch is already `paid` is a known, deliberately out-of-scope gap (a "claw-back" scenario) — this module nets refunds at calculation time only, matching the literal brief ("calculate... from paid orders minus refunds"), not a full payout-lifecycle reconciliation.
+
+### 10.3 Where it lives
+
+- **Merchant Dashboard → Payouts** (`/app/payouts`) — pending/eligible/paid totals, the configured reserve-day count, and a full payout-batch history. Read-only: there's no "pay me now" button, since payouts are only ever released by an admin today.
+- **Admin → Settlement Management** (`/admin/settlements`) — platform-wide totals, a per-entrepreneur breakdown table, a filterable (`All`/`Pending`/`Eligible`/`Paid`) batch ledger, a manual **Recalculate** action, a **Mark as Paid** action (only valid from `eligible`, requires no note but accepts an optional one — e.g. a bank transfer reference — and fires a `payout_paid` notification to the entrepreneur), and an optional **Surfboard Settlement Reports** panel.
+- New endpoints: `GET /api/merchants/:id/payouts(/summary)` (merchant, owner-only), `GET /api/admin/payouts(/summary)`, `POST /api/admin/payouts/recalculate`, `PATCH /api/admin/payouts/:id/mark-paid`, `GET /api/admin/payouts/surfboard-settlements` (all admin-gated).
+- **LIVE-VERIFIED FIX:** the merchant/admin payout-history queries (`merchantId`/`status` equality filter + a `createdAt` sort) initially 500'd — the exact same category of gap already documented in Section 12 for Orders/Customers: Firestore needs a composite index for that combination, and deploying one is a manual `firebase deploy --only firestore:indexes` step outside this codebase's control. Rather than adding to that manual-deploy dependency, both queries were rewritten to filter via Firestore equality only (auto-indexed, no deploy needed) and sort/paginate in application code instead — the same "aggregate in application code" trade-off `admin.repository.js` already uses for its own cross-merchant queries. Re-verified live after the fix: both the merchant Payouts page and every Settlement Management status filter tab load correctly with real data.
+
+### 10.4 What's a placeholder, and what Surfboard API scenarios were considered
+
+**No real bank-transfer provider is integrated** — this was explicit in scope. `payout.service.js` exports `executeBankTransfer()` as a documented, intentionally-unimplemented seam (throws `501 NOT_IMPLEMENTED`, called from nowhere yet) for whichever payout rail is chosen later (a banking API, Wise, etc.) — confirmed separately that Surfboard itself has no such "transfer to a third-party bank account" endpoint; its closest concept (Service Providers API) requires full KYB verification per entity, the same slow onboarding this platform's whole single-shared-merchant model exists to avoid.
+
+Two additional Surfboard API scenarios were evaluated for this module and integrated only where they added real value without new risk:
+- **Settlement Reports** (`GET /partners/:partnerId/merchants/:merchantId/reports`) — wired up as `surfboardService.getSettlementReports()` and surfaced as the optional, read-only panel on Settlement Management. This is **partner-level** Surfboard access — a separate credential tier from the merchant-level keys this project already has (`SURFBOARD_PARTNER_ID`, blank by default) — so it gracefully reports `{ configured: false }` rather than being a hard dependency; confirmed live with no partner ID configured.
+- **Adjustments** and partner-scoped **Notifications** APIs were reviewed but not built against: both are also partner-level-only, and neither closes a gap this module doesn't already cover more directly (tip reconciliation and payout-paid alerts are already handled by existing code paths).
+
+---
+
+## 11. Security posture
 
 From the final production audit — what's actually enforced today, in one place:
 
@@ -274,10 +319,10 @@ From the final production audit — what's actually enforced today, in one place
 - **Webhook signature verification** is real and correctly ordered: HMAC-SHA512 over the exact raw request body, constant-time compared, checked *before* any business logic runs, and fails closed (503/401) rather than skipping verification if misconfigured.
 - **Secrets**: never hardcoded anywhere in source; `.gitignore` correctly excludes every real env file and service-account JSON; confirmed via `git ls-files` that only `.example` templates have ever been committed.
 - **CORS** fails closed to a single configured origin (not `*`), and **Helmet** is applied with its default secure-header set.
-- **Firestore rules**: the frontend never talks to Firestore directly (only `firebase/auth` is imported client-side; all data access is proxied through the backend's own authorization checks above), so the newly-added deny-all `firestore.rules` (Section 11 below) is defense-in-depth, not the live enforcement boundary.
+- **Firestore rules**: the frontend never talks to Firestore directly (only `firebase/auth` is imported client-side; all data access is proxied through the backend's own authorization checks above), so the newly-added deny-all `firestore.rules` (Section 12 below) is defense-in-depth, not the live enforcement boundary.
 - **Session-scoped checkout guards** (Section 9.2) are a UX/integrity safeguard against accidental duplicate orders, not a security boundary — `sessionStorage` is client-controlled and trivially clearable. The backend's own order/payment validation (ownership checks, status-transition rules in `order.service.js`) remains the real source of truth regardless of what the frontend remembers.
 
-## 11. Known gaps (honest status, not swept under the rug)
+## 12. Known gaps (honest status, not swept under the rug)
 
 - **Two Firestore composite indexes are declared but not yet deployed** — discovered by live-testing against the real project. `GET /api/merchants/:id/orders?status=...` (the Orders page's status filter — pre-existing, not something this pass added) and `?customer=...` (the Customers page's "filtered by customer" nav) both currently return a raw `500` against the real database until these are deployed, because the underlying Firestore query combines an equality filter with a sort on a different field. The index definitions are already checked into `backend/firestore.indexes.json`; see `backend/FIRESTORE_INDEX_SETUP.md` for the one-time `firebase deploy --only firestore:indexes` command (or the manual Console steps) to fix both. Everything else in this app — including the *unfiltered* Orders/Refunds tabs — is unaffected.
 - **A defense-in-depth `backend/firestore.rules` (deny-all) is checked in but not yet deployed** — not currently load-bearing (every read/write goes through the backend's Admin SDK, which bypasses rules entirely; confirmed the frontend never imports `firebase/firestore`), but should be deployed alongside the indexes above (`cd backend && firebase deploy --only firestore:rules,firestore:indexes`) so a future accidental client-side Firestore call — or a project left in permissive "test mode" — has a real deployed backstop, not just a file sitting in the repo. `backend/firebase.json` (pointing the CLI at `firestore.rules`/`firestore.indexes.json`) has been added so this command actually works — it was previously missing entirely, which would have made even a manual deploy attempt fail.
@@ -288,7 +333,7 @@ From the final production audit — what's actually enforced today, in one place
 - Analytics' "Top products" chart only has visibility into the current month's most recent 10 orders (a limitation of the underlying summary endpoint, documented in the component's own code comment) — the AI Earnings Assistant's "Best seller" answer, computed over the full requested range server-side, remains the authoritative figure.
 - **AI Setup Concierge's "tagline suggestions" step is currently inert** — `DescriptionStep` accepts an `onTaglineSuggestions` callback and a whole wizard step (`SuggestionsStep`) exists to display AI-drafted tagline alternates, but nothing ever calls that callback (the AI response only ever returns a single `tagline`, never a suggestions array) and the backend has no support for returning multiple. Every user just sees `SuggestionsStep`'s graceful "no alternates available" fallback. Needs a product decision (wire it up for real, or remove the step) — tracked separately, not fixed blind.
 
-## 12. Tooling & code-quality pass
+## 13. Tooling & code-quality pass
 
 - **Both packages now have a real, working ESLint setup** — previously, `frontend/package.json`'s `lint` script pointed at a nonexistent `eslint.config.js` (would error immediately on ESLint v9+), and `backend/package.json` had no `lint` script at all despite the root `package.json`'s `lint:backend` referencing one. Both are fixed (`frontend/eslint.config.js`, `backend/eslint.config.js`); `npm run lint:backend` / `npm run lint:frontend` from the root now actually run. The rule sets were reconstructed to match the many pre-existing inline `eslint-disable` comments already throughout `backend/src` (`no-console`, `no-await-in-loop`, `no-continue`, `global-require`, etc.) rather than guessed from scratch, so those comments suppress real rules again instead of reading as orphaned directives.
 - **Removed the unused `@anthropic-ai/sdk` backend dependency** — the code that used it (`callAnthropicLegacy`) was already removed in an earlier pass per explicit instruction (this project only ever integrated OpenRouter + Gemini), but the npm package itself was left behind. Confirmed zero remaining imports before removing.
@@ -297,7 +342,7 @@ From the final production audit — what's actually enforced today, in one place
 
 ---
 
-## 13. Production Completion — Final Audit Fixes
+## 14. Production Completion — Final Audit Fixes
 
 The following changes were made in the final production pass to bring the application to a **100% production-ready** state:
 
@@ -332,8 +377,13 @@ Reskinned the customer-facing and admin surfaces, keeping every existing feature
 - **PDF receipt** (`ReceiptContent.tsx`'s `DownloadBillButton`) — fixed a real distortion bug: the logo asset is a true 500×500 square, but the PDF code was force-stretching it into a ~3.75:1 wide box. Now uses the icon-only square logo at correct proportions, plus a full visual redesign: branded indigo header/footer bands, rounded shaded FROM/TO cards, a real filled status pill (correctly reading PAID/REFUNDED/PARTIALLY REFUNDED from the order's actual status instead of always saying "PAID/VERIFIED"), a colored table header with alternating row shading, and a highlighted Grand Total row.
 
 ### Bug fixes found during this pass
-- **Session-establishment rate limiting** — `POST /api/auth/session` fires automatically on every app load for an already-signed-in user (not a manual login attempt), but shared `authLimiter`'s tight 5-per-15-minutes budget with the admin-login brute-force guard. Live-testing reproduced a real lockout from a handful of ordinary browser refreshes. Split into its own `sessionLimiter` (60/15min); see [Section 10](#10-security-posture).
+- **Session-establishment rate limiting** — `POST /api/auth/session` fires automatically on every app load for an already-signed-in user (not a manual login attempt), but shared `authLimiter`'s tight 5-per-15-minutes budget with the admin-login brute-force guard. Live-testing reproduced a real lockout from a handful of ordinary browser refreshes. Split into its own `sessionLimiter` (60/15min); see [Section 11](#11-security-posture).
 - **Blank screen on session failure** — `ProtectedRoute` didn't check `AuthContext`'s `sessionError` at all, so a failed session establishment (rate limiting or otherwise) fell through to a confusing role-mismatch redirect instead of a retry UI. Added the same "couldn't load your account, try again" fallback Login/Register already had.
 - **AI chat markdown not rendering** — the AI Earnings Assistant's `**bold**` markdown showed as literal asterisks in the chat bubble. Added a small inline renderer (`ChatPrimitives.tsx`) — deliberately minimal (bold only), not a full markdown library.
 - **`text-warning-strong` — a non-existent Tailwind class** silently rendering no color on the storefront's "store closed" banner (not a defined token in `tailwind.config.ts`/`tokens.css`). Fixed to a real token.
 - **Stale `senior_admin` copy** — Admin Settings' subtitle still said "Restricted to senior admins," left over from the single-tier `admin` role consolidation earlier in the project. Corrected.
+
+### Payout & Settlement Management module (new)
+Full module added end-to-end without altering any existing payment/webhook/refund flow — see [Section 10](#10-payout--settlement-management) for the complete design. Backend: `payoutBatch.repository.js`, `payout.service.js`, a real `settlementPayout.job.js` (previously a stub), `payout.controller.js`, wired into the existing `merchant.routes.js`/`admin.routes.js` files; 29 new backend tests. Frontend: a Merchant **Payouts** page and an Admin **Settlement Management** page, both nav-wired. Live end-to-end tested with a real merchant account and real order data (Admin login → Recalculate → per-entrepreneur batches appear correctly netted → status filters → mark-as-paid flow), plus a full regression sweep of every existing Admin/Merchant page and the customer storefront (no console errors, no broken flows).
+
+**Bug found and fixed during this pass:** the merchant/admin payout-history list endpoints initially 500'd — live-verified as the same category of gap already documented above (a Firestore composite index needed for an equality-filter-plus-sort query, undeployed). Rather than adding a third dependency on that manual `firebase deploy` step, the two repository queries were rewritten to filter via Firestore equality only and sort/paginate in application code — confirmed fixed live, no index deploy required for this module.

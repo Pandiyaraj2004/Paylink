@@ -57,6 +57,10 @@ const MESSAGES = {
   // onboarding) — see jobs/onboardingReminder.job.js for the scoped-down
   // trigger this message is used by.
   onboarding_reminder: 'You still have a few steps left to finish setting up your store — jump back into the AI Setup Concierge to go live.',
+  // Payout & Settlement Management (master-doc.md Section 25.5) — fires when
+  // an admin manually marks an eligible payout batch as paid
+  // (payout.service.js's markPayoutPaid).
+  payout_paid: 'A payout has been marked as paid to your linked bank account. Check your Payouts page for details.',
 };
 
 /**

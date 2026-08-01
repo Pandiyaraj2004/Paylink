@@ -74,6 +74,17 @@ const env = {
   // Surfboard's servers and would just look like a bug, so
   // surfboard.service.js omits the field entirely while this is unset.
   SURFBOARD_CALLBACK_URL: process.env.SURFBOARD_CALLBACK_URL || '',
+  // Partner-level Surfboard API access (Settlement Reports, Adjustments,
+  // partner-scoped Notifications) — a SEPARATE credential tier from the
+  // merchant-level API-KEY/API-SECRET/MERCHANT-ID above, only granted when
+  // Surfboard has onboarded this account as a registered ISV/Partner (not
+  // automatic on a free/sandbox developer account). Blank by default —
+  // surfboardService.getSettlementReports() fails gracefully (same
+  // SurfboardUnavailableError pattern as every other unconfigured feature
+  // here) until this is set, so the Payout & Settlement module works fully
+  // on merchant-level credentials alone and only gains the extra
+  // Surfboard-side settlement-report panel once a partner ID exists.
+  SURFBOARD_PARTNER_ID: process.env.SURFBOARD_PARTNER_ID || '',
   PAYMENT_RECONCILIATION_TIMEOUT_MINUTES: parseInt(process.env.PAYMENT_RECONCILIATION_TIMEOUT_MINUTES, 10) || 30,
   // How often jobs/paymentReconciliation.job.js's polling loop runs (server.js).
   // This is the PRIMARY mechanism that closes the pending->paid loop right
@@ -103,6 +114,16 @@ const env = {
   // scoped-down "Reminder" event) considers it stale enough to nudge.
   // Defaults to 3 if unset.
   ONBOARDING_REMINDER_STALE_DAYS: parseInt(process.env.ONBOARDING_REMINDER_STALE_DAYS, 10) || 3,
+  // Payout & Settlement Management (jobs/settlementPayout.job.js,
+  // services/payout.service.js): a paid order only becomes payout-ELIGIBLE
+  // once at least this many days have passed since it was captured — "a
+  // brief settlement reserve" per master-doc.md Section 25.5, mirroring how
+  // long Surfboard itself typically takes before a payment is truly settled
+  // and safe to release. Kept short by default (3 days) since this MVP has
+  // no real bank-transfer leg yet (payout.service.js's markPayoutPaid is a
+  // manual admin action, not an automatic transfer) — raise this once a real
+  // payout provider is wired in if a longer reserve is warranted.
+  PAYOUT_RESERVE_DAYS: parseInt(process.env.PAYOUT_RESERVE_DAYS, 10) || 3,
   // Admin authentication (master-doc.md Section 24.4-24.7). Admin does NOT
   // use Firebase at all — a simple Access Code + Password pair, checked
   // directly against these two values, plus a separate ADMIN_JWT_SECRET the

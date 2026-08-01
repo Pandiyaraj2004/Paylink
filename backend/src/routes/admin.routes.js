@@ -1,5 +1,6 @@
 const express = require('express');
 const adminController = require('../controllers/admin.controller');
+const payoutController = require('../controllers/payout.controller');
 const adminAuthMiddleware = require('../middleware/adminAuth.middleware');
 
 const router = express.Router();
@@ -41,5 +42,16 @@ router.get('/monitoring', adminController.getMonitoring);
 // routes is gone along with the role itself (Section 24.6).
 router.get('/platform-settings', adminController.getPlatformSettings);
 router.patch('/platform-settings', adminController.updatePlatformSettings);
+
+// Payout & Settlement Management (master-doc.md Section 25.5, new) — the
+// Settlement Management page. `/summary` and `/surfboard-settlements` are
+// registered before the parameterized `/:id/mark-paid` route only for
+// readability grouping — Express has no ambiguity here regardless of order
+// since none of these paths share the same segment shape.
+router.get('/payouts/summary', payoutController.adminGetSummary);
+router.get('/payouts/surfboard-settlements', payoutController.adminGetSettlementReports);
+router.get('/payouts', payoutController.adminListPayouts);
+router.post('/payouts/recalculate', payoutController.adminRecalculate);
+router.patch('/payouts/:id/mark-paid', payoutController.adminMarkPaid);
 
 module.exports = router;

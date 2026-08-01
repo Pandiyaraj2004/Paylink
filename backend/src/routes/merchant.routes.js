@@ -2,6 +2,7 @@ const express = require('express');
 const merchantController = require('../controllers/merchant.controller');
 const orderController = require('../controllers/order.controller');
 const notificationController = require('../controllers/notification.controller');
+const payoutController = require('../controllers/payout.controller');
 const authMiddleware = require('../middleware/auth.middleware');
 const { requireRole } = require('../middleware/role.middleware');
 
@@ -68,5 +69,12 @@ router.get('/:id/customers', authMiddleware, requireRole('entrepreneur'), mercha
 // GET /api/merchants/:id/reviews (master-doc.md Section 14.11) — star
 // ratings + written reviews the entrepreneur's customers have left.
 router.get('/:id/reviews', authMiddleware, requireRole('entrepreneur'), merchantController.getMerchantReviews);
+
+// GET /api/merchants/:id/payouts(/summary) (master-doc.md Section 25.5's
+// Payout & Settlement Management module, new) — the Payouts page. Read-only
+// from the merchant's side; only Admin can mark a payout as paid
+// (routes/admin.routes.js).
+router.get('/:id/payouts/summary', authMiddleware, requireRole('entrepreneur'), payoutController.getMyPayoutSummary);
+router.get('/:id/payouts', authMiddleware, requireRole('entrepreneur'), payoutController.listMyPayouts);
 
 module.exports = router;

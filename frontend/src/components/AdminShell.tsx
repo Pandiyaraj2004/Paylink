@@ -6,6 +6,7 @@ import {
   Store,
   BarChart3,
   Undo2,
+  Landmark,
   ServerCog,
   Settings,
   ChevronLeft,
@@ -34,6 +35,7 @@ const NAV_ITEMS = [
   { to: '/admin/merchants', label: 'Merchants', icon: Store },
   { to: '/admin/reports', label: 'Reports & Analytics', icon: BarChart3 },
   { to: '/admin/refunds-disputes', label: 'Refunds & Disputes', icon: Undo2 },
+  { to: '/admin/settlements', label: 'Settlement Management', icon: Landmark },
   { to: '/admin/system', label: 'System', icon: ServerCog },
   { to: '/admin/settings', label: 'Settings', icon: Settings },
 ];
