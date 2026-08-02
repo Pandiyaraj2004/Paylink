@@ -38,6 +38,14 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+const SESSION_RETRY_DELAYS_MS = [3000, 6000, 10000];
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -58,17 +66,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const establishSession = React.useCallback(async () => {
     setSessionError(false);
-    try {
-      const session = await createSession();
-      setIsNewUser(session.isNewUser);
-      setMerchantId(session.merchantId);
-      setRole(session.role);
-      sessionEstablished.current = true;
-    } catch (err) {
-      console.error('Failed to establish backend session', err);
-      setSessionError(true);
-      // Deliberately NOT setting sessionEstablished.current here — leaves
-      // the door open for retrySession() (or a fresh sign-in) to try again.
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        const session = await createSession();
+        setIsNewUser(session.isNewUser);
+        setMerchantId(session.merchantId);
+        setRole(session.role);
+        sessionEstablished.current = true;
+        return;
+      } catch (err) {
+        // Some hosting plans spin the backend down after a period of
+        // inactivity — the first request after that has to wait for it to
+        // cold-start, which the host's own edge/proxy layer often surfaces
+        // as an immediate failure (e.g. a 502) rather than simply queuing
+        // the request. Live-verified: a user's first sign-in after such a
+        // gap hit exactly this — Firebase auth succeeded, this call failed
+        // once, and they saw the sessionError fallback even though the
+        // backend came back up moments later. These retries absorb that gap
+        // automatically so a cold start looks like a few extra seconds of
+        // loading, not an error screen — a genuinely broken backend still
+        // correctly ends up in sessionError once these are exhausted.
+        if (attempt >= SESSION_RETRY_DELAYS_MS.length) {
+          console.error('Failed to establish backend session', err);
+          setSessionError(true);
+          // Deliberately NOT setting sessionEstablished.current here —
+          // leaves the door open for retrySession() (or a fresh sign-in) to
+          // try again.
+          return;
+        }
+        await sleep(SESSION_RETRY_DELAYS_MS[attempt]);
+      }
     }
   }, []);
 

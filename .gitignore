@@ -3,6 +3,7 @@ dist/
 build/
 .env
 .env.local
+.env.production
 .env.*.local
 *.log
 .DS_Store
@@ -11,6 +12,7 @@ backend/src/config/*.json
 !backend/src/config/firebase-service-account.example.json
 *firebase-adminsdk*.json
 .vite/
+.firebase/
 coverage/
 
 # TypeScript project-reference build output (final production audit: these

@@ -2225,9 +2225,9 @@ paylink/
 | Image/QR/PDF | `browser-image-compression`, `qrcode.react`, `jspdf` | Keeps all image storage and document generation client-side and inside Firestore's free Spark plan — no Cloud Storage, no Cloud Functions, no Blaze plan required (Section 21.8, Section 36) |
 | Backend | Node.js + Express.js | Matches frontend language (JS/TS), simple to reason about for a small team |
 | Database | Firebase Firestore | NoSQL document database; fast to build on for a small team, pairs naturally with Firebase Auth/Hosting, and Security Rules add a client-side enforcement layer on top of the backend's own checks |
-| AI | Claude API (primary) / OpenAI API (alternative) | Function-calling and structured-output support for both AI modules |
+| AI | OpenRouter (primary) / Google Gemini (fallback) | Function-calling and structured-output support for both AI modules; both are optional and the app degrades gracefully (manual onboarding form, a clear "temporarily unavailable" message) if neither is configured |
 | Payments | Surfboard Payments APIs | Single unified API for card/Swish/wallet across Nordic/European markets |
-| Hosting | Any standard container-friendly platform (e.g., Render, Fly.io, or a cloud provider's managed container service) | Keeps infra simple for a small team; no vendor-specific lock-in assumed at this stage |
+| Hosting | Backend: any standard container-friendly platform (e.g., Fly.io, or a cloud provider's managed container service). Frontend: Firebase Hosting, serving the static `frontend/dist` build (config in the repo-root `firebase.json`/`.firebaserc`) | Keeps infra simple for a small team; no vendor-specific lock-in assumed for the backend |
 | CI/CD | GitHub Actions | Free for small teams, tightly integrated with the repo |
 | Monitoring | Any APM tool the team standardizes on (e.g., Sentry for errors, a hosted metrics dashboard for the Admin System page) | Section 16.5's Monitoring tab depends on this being in place |
 

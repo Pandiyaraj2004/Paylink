@@ -32,13 +32,15 @@ merchants/{id}/orders.where('customerRef', '==', x).orderBy('createdAt', 'desc')
 
 ## Option A — deploy via Firebase CLI (recommended, one-time)
 
+Run from the **repo root** (`firebase.json`/`.firebaserc` now live there, alongside the Hosting config — not inside `backend/` anymore):
+
 ```bash
-npm install -g firebase-tools
+npm install -g firebase-tools   # or use `npx firebase-tools` for every command below
 firebase login
-firebase deploy --only firestore:indexes --project paylink-b3f30
+firebase deploy --only firestore:indexes
 ```
 
-This reads `backend/firestore.indexes.json` and creates all three indexes in one shot. Index builds take a few minutes on an empty/small collection.
+`--project paylink-b3f30` is no longer needed on each call — `.firebaserc` at the repo root already sets it as the default project. This reads `backend/firestore.indexes.json` (referenced by the root `firebase.json`) and creates all three indexes in one shot. Index builds take a few minutes on an empty/small collection.
 
 ## Option B — create manually in the Firebase Console
 

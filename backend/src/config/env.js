@@ -48,8 +48,17 @@ const env = {
   FIREBASE_SERVICE_ACCOUNT_PATH: process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '',
   FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || '',
   FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL || '',
-  // Stored in .env with literal \n escapes (PEM newlines don't survive dotenv otherwise).
-  FIREBASE_PRIVATE_KEY: (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
+  // Stored in .env with literal \n escapes (PEM newlines don't survive dotenv
+  // otherwise). Also defensively strips a single pair of surrounding quote
+  // characters — a common real-world deploy gotcha: copying the
+  // `private_key` value straight out of the service account JSON file,
+  // quotes and all, instead of just the string content between them, breaks
+  // PEM parsing with exactly the "Invalid PEM formatted message" error this
+  // was live-verified to produce.
+  FIREBASE_PRIVATE_KEY: (process.env.FIREBASE_PRIVATE_KEY || '')
+    .trim()
+    .replace(/^['"]|['"]$/g, '')
+    .replace(/\\n/g, '\n'),
   // AI provider: OpenRouter is tried first, Gemini is the fallback if
   // OpenRouter is unconfigured or its call fails. Anthropic/Claude (an
   // earlier session's original provider) was never actually integrated with
