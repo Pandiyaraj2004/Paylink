@@ -1,5 +1,29 @@
 # PayLink
 
+> A full-stack storefront and payment-workflow project for solo and micro-businesses.
+
+**React · TypeScript · Express · Firebase · Jest**
+
+## At a glance
+
+- Merchant storefronts, product management, and order/payment flows.
+- Separate API controllers, services, repositories, and scheduled jobs.
+- Tests covering merchant ownership, roles, disputes, and other business behavior.
+
+## Explore the implementation
+
+| Start here | What to inspect |
+| --- | --- |
+| [frontend/src](frontend/src) | Frontend implementation |
+| [backend/src/services](backend/src/services) | Business logic and provider integration |
+| [backend/src/jobs](backend/src/jobs) | Background jobs |
+| [backend/tests](backend/tests) | Behavioral tests |
+| [master-doc.md](master-doc.md) | Product and architecture specification |
+
+---
+
+## Detailed guide
+
 An AI-powered payment platform that lets a solo/micro-entrepreneur (home baker, tailor, tutor, mobile mechanic, etc.) get a live, brandable storefront and start accepting card payments in minutes — no company registration, no manual admin approval, no separate checkout page for their customers to navigate to.
 
 This file is the practical getting-started guide: architecture, how to run it, every page in the app, a walkthrough of the real end-to-end flow, a manual test script with concrete inputs/outputs, and exactly which Surfboard Payments API calls are actually wired up. For the full product/architecture specification (business rules, data model, UI system, every page's detailed spec), see [`master-doc.md`](master-doc.md) — this README is the "how do I actually run and check this thing" companion to that document, not a replacement for it.
@@ -82,7 +106,7 @@ The single consolidated `.env` file at the root folder contains all configuratio
 | `SURFBOARD_ACTIVE_CURRENCIES` / `SURFBOARD_ACTIVE_PAYMENT_METHODS` | Checkout validation | e.g. `SEK` and `card`. |
 | `PAYOUT_RESERVE_DAYS` | Payout & Settlement Management ([Section 10](#10-payout--settlement-management)) | Days a paid order's settlement reserve holds before its payout batch becomes eligible. Defaults to `3`. |
 | `SURFBOARD_PARTNER_ID` | Optional Surfboard Settlement Reports panel | Partner-level credential, separate from the merchant-level keys above — leave blank to skip that panel entirely (it degrades gracefully). |
-| `ADMIN_ACCESS_CODE` / `ADMIN_PASSWORD` / `ADMIN_JWT_SECRET` | Admin login | Dev default is `pandisabi` / `pandisabi` with a custom secret keyset. Change before deploying to production. |
+| `ADMIN_ACCESS_CODE` / `ADMIN_PASSWORD` / `ADMIN_JWT_SECRET` | Admin login | Configure a unique access code, password, and random signing secret in your local environment. |
 | `VITE_API_BASE_URL` | Frontend API | Defaults to `http://localhost:4000/api` for local dev. For a production build, don't edit this file — add a root-level `.env.production` (gitignored) with just this one variable; Vite merges it on top automatically for `vite build` only, so `vite dev` always keeps talking to your local backend. |
 | `VITE_FIREBASE_*` | Frontend Firebase | Standard Firebase Web Client config keys. |
 | `VITE_FIREBASE_VAPID_KEY` | Push notifications | Optional. |
@@ -329,7 +353,7 @@ From the final production audit — what's actually enforced today, in one place
 - **Two Firestore composite indexes are declared but not yet deployed** — discovered by live-testing against the real project. `GET /api/merchants/:id/orders?status=...` (the Orders page's status filter — pre-existing, not something this pass added) and `?customer=...` (the Customers page's "filtered by customer" nav) both currently return a raw `500` against the real database until these are deployed, because the underlying Firestore query combines an equality filter with a sort on a different field. The index definitions are already checked into `backend/firestore.indexes.json`; see `backend/FIRESTORE_INDEX_SETUP.md` for the one-time `firebase deploy --only firestore:indexes` command (or the manual Console steps) to fix both. Everything else in this app — including the *unfiltered* Orders/Refunds tabs — is unaffected.
 - **A defense-in-depth `backend/firestore.rules` (deny-all) is checked in but not yet deployed** — not currently load-bearing (every read/write goes through the backend's Admin SDK, which bypasses rules entirely; confirmed the frontend never imports `firebase/firestore`), but should be deployed alongside the indexes above (from the **repo root**: `firebase deploy --only firestore:rules,firestore:indexes`) so a future accidental client-side Firestore call — or a project left in permissive "test mode" — has a real deployed backstop, not just a file sitting in the repo. `firebase.json` and `.firebaserc` live at the **repo root** (not `backend/` — moved so the same config can also drive Firebase Hosting for the built frontend, `frontend/dist`) and still point the CLI at `backend/firestore.rules`/`backend/firestore.indexes.json`; `.firebaserc` pins the default project (`paylink-b3f30`) so no `--project` flag is needed on any command. See `backend/FIRESTORE_INDEX_SETUP.md` for the exact commands.
 - **`whyChooseUs`** (storefront "Why Choose Us" bullets) and **`timeZone`** (per-merchant timezone for Dashboard/Analytics figures) are documented in `master-doc.md`'s schema but have no write or read path built yet — every other documented merchant field is fully wired end-to-end.
-- **Admin credentials** (`ADMIN_ACCESS_CODE`/`ADMIN_PASSWORD`/`ADMIN_JWT_SECRET`) — confirm before any real deployment that these are rotated off the documented `pandisabi/pandisabi` dev placeholder and a freshly-generated secret. No repo-level leak exists (both `.env`/`.env.local` are gitignored and were never committed), this is purely a "don't ship the dev default" reminder.
+- **Admin credentials** — configure unique values for `ADMIN_ACCESS_CODE`, `ADMIN_PASSWORD`, and `ADMIN_JWT_SECRET` before deployment. Never reuse shared development defaults.
 - **`requireRole` doesn't read a real tamper-proof claim** — `role.middleware.js` defaults to `'entrepreneur'` because the Firestore `users/{uid}.role` field is never actually set as a Firebase custom claim. Harmless today (that's the only role any Firebase-authenticated user ever has — Admin and Customer aren't Firebase-authenticated at all), but if a second Firebase-auth role is ever introduced, this would need fixing first (`admin.auth().setCustomUserClaims` at account creation, or an explicit Firestore role re-check in the middleware) rather than trusting this default.
 - **A few third-party dependency vulnerabilities are flagged by `npm audit` but deliberately not force-fixed**, since every available fix requires a major-version bump of something load-bearing, and this pass prioritized not regressing a working feature over closing an audit line item: `react-router-dom` (open redirect via backslash in `Link`/`useNavigate` — low real exploitability here since every `navigate()` call in this app uses a static internal path, never user-controlled input; fix requires the 6→7 major version), `jspdf`'s `dompurify` transitive dependency (XSS; fix requires jspdf 2→4, and jspdf backs the real receipt-PDF feature), and a `uuid` version nested inside `firebase-admin`'s own dependency tree (not controllable without risking breaking the Admin SDK). All three need a dedicated upgrade-and-regression-test pass, not a blind `npm audit fix --force` right before a release. A 4th finding (`brace-expansion` via `jest`'s dependency tree) is dev-tooling-only — never shipped to production — and its only available fix is downgrading `jest` from 29.x to 25.x, which would be a regression, not a fix.
 - Analytics' "Top products" chart only has visibility into the current month's most recent 10 orders (a limitation of the underlying summary endpoint, documented in the component's own code comment) — the AI Earnings Assistant's "Best seller" answer, computed over the full requested range server-side, remains the authoritative figure.
@@ -346,7 +370,7 @@ From the final production audit — what's actually enforced today, in one place
 
 ## 14. Production Completion — Final Audit Fixes
 
-The following changes were made in the final production pass to bring the application to a **100% production-ready** state:
+The following changes were made in the final production pass to improve deployment readiness:
 
 ### Payment Confirmation — Zero-Latency Fix
 **Problem:** After returning from Surfboard, customers saw a long "Confirming payment…" spinner because the reconciliation check was blocking the receipt API response.
@@ -389,3 +413,7 @@ Reskinned the customer-facing and admin surfaces, keeping every existing feature
 Full module added end-to-end without altering any existing payment/webhook/refund flow — see [Section 10](#10-payout--settlement-management) for the complete design. Backend: `payoutBatch.repository.js`, `payout.service.js`, a real `settlementPayout.job.js` (previously a stub), `payout.controller.js`, wired into the existing `merchant.routes.js`/`admin.routes.js` files; 29 new backend tests. Frontend: a Merchant **Payouts** page and an Admin **Settlement Management** page, both nav-wired. Live end-to-end tested with a real merchant account and real order data (Admin login → Recalculate → per-entrepreneur batches appear correctly netted → status filters → mark-as-paid flow), plus a full regression sweep of every existing Admin/Merchant page and the customer storefront (no console errors, no broken flows).
 
 **Bug found and fixed during this pass:** the merchant/admin payout-history list endpoints initially 500'd — live-verified as the same category of gap already documented above (a Firestore composite index needed for an equality-filter-plus-sort query, undeployed). Rather than adding a third dependency on that manual `firebase deploy` step, the two repository queries were rewritten to filter via Firestore equality only and sort/paginate in application code — confirmed fixed live, no index deploy required for this module.
+
+---
+
+Built by **Pandiyaraj A** · [Portfolio](https://pandiyaraj.netlify.app/) · [GitHub](https://github.com/Pandiyaraj2004) · [LinkedIn](https://www.linkedin.com/in/pandiyaraj-a-mca/)
